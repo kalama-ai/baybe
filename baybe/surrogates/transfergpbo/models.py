@@ -145,8 +145,6 @@ class MHGPModel(Model):
                 "No source data was provided to train the model."
                 "MHGP will fall back to standard GP."
             )
-        else:
-            print("Meta-fitting MHGP on source data.")
 
         for i, (X_source, Y_source) in enumerate(source_data):
             # Compute residuals from previous GPs
@@ -194,10 +192,8 @@ class MHGPModel(Model):
                 "No target data provided for fitting the model."
                 "The posterior will fall back to the last model in the stack."
             )
-
         else:
-            print("Fitting MHGP on target data")
-
+            # Fit target GP on residuals from all source GPs
             if len(self.source_gps) == 0:
                 residuals = Y_target.clone()
             else:
@@ -400,7 +396,6 @@ class MHGPModel(Model):
                 )
 
             else:
-                print("Target data was provided. Predicting from target GP.")
                 # Add target GP prediction
                 target_posterior = self.target_gp.posterior(X)
                 total_mean = total_mean + target_posterior.mean
