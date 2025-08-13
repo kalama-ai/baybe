@@ -195,3 +195,15 @@ you have to add:
             benchmarks_to_execute='{"benchmark_list": ${{ env.FOO_BAR }} }'  #<-- Add this line
           fi
 ``` 
+
+# Visualization
+
+Benchmark results can be visualized using the unified visualization command:
+
+```bash
+python -m benchmarks.visualization --type regression --file-names result1.json result2.json
+python -m benchmarks.visualization --type convergence --file-names result1.json result2.json
+```
+
+The `--type` parameter specifies whether to create regression metric plots or convergence 
+plots, and `--file-names` accepts one or more JSON result files.
