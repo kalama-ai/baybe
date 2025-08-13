@@ -20,7 +20,7 @@ python -m benchmarks --benchmark-list synthetic_2C1D_1C
 ```
 
 Special transfer learning regression benchmarks are 
-`direct_arylation_temperature_tl_regr`.
+`direct_arylation_temperature_tl_regr`, `aryl_halide_CT_I_BM_tl_regr`.
 
 Please find instruction on how to add the benchmarks to the CI/CD pipeline in the
 section [Add benchmark to CI/CD pipeline](#add-benchmark-to-ci/cd-pipeline).
