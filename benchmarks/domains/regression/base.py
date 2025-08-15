@@ -12,6 +12,7 @@ from tqdm import tqdm
 from baybe.objectives import SingleTargetObjective
 from baybe.searchspace import SearchSpace
 from baybe.surrogates.gaussian_process.core import GaussianProcessSurrogate
+from baybe.surrogates.transfergpbo import MHGPGaussianProcessSurrogate
 from benchmarks.definition import TransferLearningRegressionSettings
 from benchmarks.definition.regression import REGRESSION_METRICS
 
@@ -110,6 +111,7 @@ def run_tl_regression_benchmark(
                 vanilla_gp = GaussianProcessSurrogate()
                 tl_models = [
                     {"name": "GP_Index_Kernel", "model": GaussianProcessSurrogate()},
+                    {"name": "MHGP", "model": MHGPGaussianProcessSurrogate()},
                 ]
                 train_indices = target_indices[:n_train_pts]
                 test_indices = target_indices[
