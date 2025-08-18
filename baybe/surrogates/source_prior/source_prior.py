@@ -1,4 +1,4 @@
-"""Source prior transfer learning Gaussian process surrogate implementation."""
+"""Abstract base class for source prior surrogates."""
 
 from typing import TYPE_CHECKING, ClassVar
 
@@ -10,11 +10,10 @@ from typing_extensions import override
 
 from baybe.exceptions import ModelNotTrainedError
 from baybe.parameters import TaskParameter
-from baybe.parameters.base import Parameter  # Add this import
 
 # Add these imports for the scaler factory
 if TYPE_CHECKING:
-    from botorch.models.transforms.input import InputTransform
+    pass
 
 from copy import deepcopy
 
@@ -31,12 +30,21 @@ from baybe.surrogates.gaussian_process.presets.default import (
 
 
 class GPyTMean(gpytorch.means.Mean):
-    """Mean module that uses a GP as prior mean function.
+    """GPyTorch mean module using a trained GP as prior mean.
 
-    This class wraps a pre-trained GP to use as a mean function in another GP.
+    This mean module wraps a trained Gaussian Process and uses its predictions
+    as the mean function for another GP. This enables transfer learning by
+    incorporating knowledge from a source GP into a target GP.
     """
 
     def __init__(self, gp, batch_shape=torch.Size(), **kwargs):
+        """Initialize the GP-based mean module.
+
+        Args:
+            gp: Trained Gaussian Process to use as mean function.
+            batch_shape: Batch shape for the mean module.
+            **kwargs: Additional keyword arguments.
+        """
         super().__init__()
         # See https://github.com/cornellius-gp/gpytorch/issues/743
         self.gp = deepcopy(gp)
@@ -44,16 +52,16 @@ class GPyTMean(gpytorch.means.Mean):
         for param in self.gp.parameters():
             param.requires_grad = False
 
-    def reset_gp(self) -> None:
-        """Reset the GP to evaluation mode."""
+    def reset_gp(self):
+        """Reset the GP to evaluation mode for prediction."""
         self.gp.eval()
         self.gp.likelihood.eval()
 
-    def forward(self, input: Tensor) -> Tensor:
-        """Forward pass through the mean function.
+    def forward(self, input):
+        """Compute the mean function using the wrapped GP.
 
         Args:
-            input: Input tensor.
+            input: Input tensor for which to compute the mean.
 
         Returns:
             Mean predictions from the wrapped GP.
@@ -67,32 +75,39 @@ class GPyTMean(gpytorch.means.Mean):
 
 
 class GPyTKernel(gpytorch.kernels.Kernel):
-    """Kernel module that uses a pre-trained kernel.
+    """GPyTorch kernel module wrapping a pre-trained kernel.
 
-    This class wraps a pre-trained kernel to use in another GP.
+    This kernel module wraps a trained kernel and uses it as a fixed kernel
+    component in another GP. The wrapped kernel's parameters are frozen.
     """
 
     def __init__(self, kernel, **kwargs):
+        """Initialize the kernel wrapper.
+
+        Args:
+            kernel: Pre-trained kernel to wrap.
+            **kwargs: Additional keyword arguments.
+        """
         super().__init__()
         # See https://github.com/cornellius-gp/gpytorch/issues/743
         self.base_kernel = deepcopy(kernel)
         for param in self.base_kernel.parameters():
             param.requires_grad = False
 
-    def reset(self) -> None:
-        """Reset the kernel to evaluation mode."""
+    def reset(self):
+        """Reset the wrapped kernel to evaluation mode."""
         self.base_kernel.eval()
 
-    def forward(self, x1: Tensor, x2: Tensor, **params) -> Tensor:
-        """Forward pass through the kernel.
+    def forward(self, x1, x2, **params):
+        """Compute kernel matrix using the wrapped kernel.
 
         Args:
-            x1: First input tensor.
-            x2: Second input tensor.
-            **params: Additional parameters.
+            x1: First set of input points.
+            x2: Second set of input points.
+            **params: Additional kernel parameters.
 
         Returns:
-            Kernel matrix.
+            Kernel matrix computed by the wrapped kernel.
         """
         self.reset()
         with torch.no_grad(), gpytorch.settings.fast_pred_var():
@@ -108,7 +123,7 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
     This surrogate implements transfer learning by:
     1. Training a source GP on source task data (without task dimension)
     2. Using the source GP as a mean prior for the target GP
-    3. Training the target GP on target data with source-informed priors
+    3. Training the target GP on all data (source + target) with source-informed priors
     """
 
     # Class variables
@@ -141,56 +156,50 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
     _target_gp: SingleTaskGP | None = field(init=False, default=None, eq=False)
     """Fitted target Gaussian Process model with source prior."""
 
-    def _identify_target_task(self) -> int:
-        """Identify target task from TaskParameter active_values.
+    def _identify_target_task(self) -> tuple[int, float]:
+        """Identify the TaskParameter and return its column index and target value.
 
-        Extracts the target task from the TaskParameter's active_values
-        and converts the task name to its corresponding numeric ID.
+        This function identifies the TaskParameter within the search space, retrieves
+        its active value, and returns both the column index of the TaskParameter and
+        the computational representation value for the active value. This is useful
+        for filtering tensor rows that correspond to the target task.
 
         Returns:
-            Numeric ID of the target task.
+            A tuple containing:
+            - task_idx (int): The column index of the TaskParameter in the computational
+                            representation of the search space
+            - target_value (float): The computational representation value for the
+                        active value of the TaskParameter (used for filtering)
 
-        Raises:
-            ValueError: If no TaskParameter found in search space.
-            ValueError: If not exactly one active task is specified.
+        Example:
+            >>> # Filter tensor rows for target task
+            >>> task_idx, target_value = _identify_target_task(searchspace)
+            >>> target_mask = candidates_comp_scaled[:, task_idx] == target_value
+            >>> target_candidates = candidates_comp_scaled[target_mask]
         """
-        # Find the TaskParameter
-        task_param = None
-        for param in self._searchspace.parameters:
-            if isinstance(param, TaskParameter):
-                task_param = param
-                break
+        searchspace = self._searchspace
+        # Find the TaskParameter in the search space
+        task_params = [
+            p for p in searchspace.parameters if isinstance(p, TaskParameter)
+        ]
 
-        if task_param is None:
-            raise ValueError(
-                "No TaskParameter found in search space. "
-                "Transfer learning requires a TaskParameter."
-            )
+        task_param = task_params[0]
 
-        # Get active values (target tasks)
-        active_values = task_param.active_values
+        # Get the active value
+        active_value = task_param.active_values[0]
 
-        if len(active_values) != 1:
-            raise ValueError(
-                f"Got {len(active_values)}: {active_values} actives values. "
-                f"Transfer learning requires exactly one target task."
-            )
+        # Get the index of the TaskParameter in the computational representation
+        task_idx = searchspace.task_idx
 
-        target_task_name = active_values[0]
+        # Get the computational representation value for the active value
+        # TaskParameter uses INT encoding, so comp_df has a single column with
+        # integer values
+        comp_df = task_param.comp_df
 
-        # Convert task name to numeric ID using TaskParameter's values order
-        # TaskParameter uses integer encoding: values[0]→0, values[1]→1, etc.
-        task_name_to_id = {name: idx for idx, name in enumerate(task_param.values)}
+        # Extract the single computational representation value
+        target_value = float(comp_df.loc[active_value].iloc[0])
 
-        if target_task_name not in task_name_to_id:
-            raise ValueError(
-                f"Target task '{target_task_name}' not found in TaskParameter values: "
-                f"{list(task_name_to_id.keys())}"
-            )
-
-        target_task_id = task_name_to_id[target_task_name]
-
-        return target_task_id
+        return task_idx, target_value
 
     def _validate_transfer_learning_context(self) -> None:
         """Validate that we have a proper transfer learning setup.
@@ -202,7 +211,8 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
         if self._searchspace.task_idx is None:
             raise ValueError(
                 "No task parameter found in search space. "
-                "TransferGPBOSurrogate requires a TaskParameter for transfer learning."
+                "SourcePriorGaussianProcessSurrogate requires a TaskParameter "
+                "for transfer learning."
             )
         # Set input_dim if not provided at initialization
         if self.input_dim is None:
@@ -220,7 +230,11 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
             )
 
     def _extract_task_data(
-        self, X: Tensor, Y: Tensor = None, task_feature: int = -1, target_task: int = 0
+        self,
+        X: Tensor,
+        Y: Tensor = None,
+        task_feature: int = -1,
+        target_task: int = 0,
     ) -> tuple[list[tuple[Tensor, Tensor]], tuple[Tensor, Tensor]]:
         """Extract source and target data from multi-task format.
 
@@ -263,34 +277,20 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
 
         return source_data, (X_target, Y_target)
 
-    @staticmethod
-    @override
-    def _make_parameter_scaler_factory(
-        parameter: Parameter,
-    ) -> type["InputTransform"] | None:
-        """Prevent task parameters from being normalized."""
-        from botorch.models.transforms.input import Normalize
-
-        from baybe.parameters import TaskParameter
-
-        if isinstance(parameter, TaskParameter):
-            return None  # No scaling for task parameters
-        return Normalize  # Normal scaling for continuous parameters
-
     def _fit_with_and_without_prior(
         self,
         searchspace: SearchSpace,
         train_x: Tensor,
         train_y: Tensor,
         prior: SingleTaskGP = None,
-    ) -> SingleTaskGP:
-        """Fit a GP model with or without a source prior.
+    ):
+        """Fit a Gaussian Process with or without a prior.
 
         Args:
-            searchspace: The search space for the GP.
+            searchspace: The search space for the problem.
             train_x: Training input data.
             train_y: Training target data.
-            prior: Optional source GP to use as prior.
+            prior: Optional prior GP to use as mean function.
 
         Returns:
             Fitted SingleTaskGP model.
@@ -314,7 +314,7 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
             outcome_transform = botorch.models.transforms.Standardize(1)
 
         else:
-            # Use source GP as prior - inherit transforms from source
+            # Use the provided prior GP as mean function
             prior_model = deepcopy(prior)
             mean_module = GPyTMean(prior_model)
             input_transform = prior_model.input_transform
@@ -324,7 +324,7 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
         batch_shape = train_x.shape[:-2]
         mean_module.batch_shape = batch_shape
 
-        # define the covariance module for the numeric dimensions
+        # Define the covariance module for the numeric dimensions
         base_covar_module = self.kernel_factory(
             context.searchspace, train_x, train_y
         ).to_gpytorch(
@@ -332,9 +332,10 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
             active_dims=numerical_idxs,
             batch_shape=batch_shape,
         )
-        # Note: prior_base_kernel is not used in current implementation
+        # Note: Prior base kernel handling is currently not implemented
+        # as it's not needed for the current use case
 
-        # create GP covariance
+        # Create GP covariance
         if not context.is_multitask:
             covar_module = base_covar_module
         else:
@@ -345,14 +346,14 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
             )
             covar_module = base_covar_module * task_covar_module
 
-        # create GP likelihood
+        # Create GP likelihood
         noise_prior = _default_noise_factory(context.searchspace, train_x, train_y)
         likelihood = gpytorch.likelihoods.GaussianLikelihood(
             noise_prior=noise_prior[0].to_gpytorch(), batch_shape=batch_shape
         )
         likelihood.noise = torch.tensor([noise_prior[1]])
 
-        # construct and fit the Gaussian process
+        # Construct and fit the Gaussian process
         model = botorch.models.SingleTaskGP(
             train_x,
             train_y,
@@ -393,9 +394,10 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
         if not filtered_parameters:
             return SearchSpace()
 
-        # Create new SearchSpace with filtered parameters and original constraints
+        # Create new SearchSpace with filtered parameters and constraints
         return SearchSpace.from_product(
-            parameters=filtered_parameters, constraints=list(searchspace.constraints)
+            parameters=filtered_parameters,
+            constraints=list(searchspace.constraints),
         )
 
     @override
@@ -423,16 +425,15 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
         # Check if we receive empty data
         if train_x.shape[0] == 0 or train_y.shape[0] == 0:
             raise ValueError(
-                f"Received empty training data! train_x.shape={train_x.shape},"
-                f" train_y.shape={train_y.shape}"
+                f"Received empty training data! "
+                f"train_x.shape={train_x.shape}, train_y.shape={train_y.shape}"
             )
 
         # 1. Validate transfer learning context
         self._validate_transfer_learning_context()
 
         # 2. Identify target task from TaskParameter active_values
-        self._target_task_id = self._identify_target_task()
-        self._task_column_idx = self._searchspace.task_idx
+        self._task_column_idx, self._target_task_id = self._identify_target_task()
 
         source_data, (X_target, Y_target) = self._extract_task_data(
             train_x, train_y, self._task_column_idx, self._target_task_id
@@ -440,7 +441,7 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
         source_data = source_data[0]
         X_source, Y_source = source_data
 
-        # Remove the task parameter from searchspace before training the GPs
+        # Remove task parameter from searchspace before training the GPs
         reduced_searchspace = self._reduce_searchspace(searchspace=self._searchspace)
 
         # Fit the source GP
@@ -451,7 +452,7 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
             searchspace=reduced_searchspace,
         )
 
-        # Fit the target GP using the source GP as a prior
+        # Fit target model using source posterior as prior
         self._target_gp = self._fit_with_and_without_prior(
             train_x=X_target,
             train_y=Y_target,
@@ -497,16 +498,16 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
 
     @override
     def to_botorch(self) -> Model:
-        """Convert surrogate to BoTorch model.
+        """Return the BoTorch model representation.
 
         Returns:
-            The target GP model for BoTorch compatibility.
+            The fitted target GP model.
 
         Raises:
             ModelNotTrainedError: If model hasn't been trained yet.
         """
         if self._target_gp is None:
             raise ModelNotTrainedError(
-                "Model must be fitted before conversion. Call fit() first."
+                "Model must be fitted before accessing BoTorch model."
             )
         return self._target_gp

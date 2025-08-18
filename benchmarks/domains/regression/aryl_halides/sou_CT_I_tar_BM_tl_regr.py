@@ -37,11 +37,11 @@ def create_searchspaces(
         - source_tasks: List of source task values
         - target_task: Target task value
     """
-    source_tasks = (["1-chloro-4-(trifluoromethyl)benzene", "2-iodopyridine"],)
+    source_tasks = ["1-chloro-4-(trifluoromethyl)benzene", "2-iodopyridine"]
     target_task = "1-iodo-4-methoxybenzene"
 
     vanilla_searchspace = make_searchspace(
-        data=data, target_tasks=None, source_tasks=source_tasks
+        data=data, target_tasks=None, source_tasks=None
     )
     tl_searchspace = make_searchspace(
         data=data, target_tasks=[target_task], source_tasks=source_tasks
@@ -90,8 +90,8 @@ def aryl_halide_CT_I_BM_tl_regr(
 
 # Define the benchmark settings
 benchmark_config = TransferLearningRegressionSettings(
-    num_mc_iterations=30,
-    max_train_points=10,
+    num_mc_iterations=2,  # 30,
+    max_train_points=2,  # 10,
     source_fractions=[0.01, 0.05, 0.1],
     noise_std=0.0,  # Not used for real data
 )
