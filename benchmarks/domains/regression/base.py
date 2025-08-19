@@ -13,7 +13,7 @@ from baybe.objectives import SingleTargetObjective
 from baybe.searchspace import SearchSpace
 from baybe.surrogates.gaussian_process.core import GaussianProcessSurrogate
 from baybe.surrogates.source_prior import SourcePriorGaussianProcessSurrogate
-from baybe.surrogates.transfergpbo import MHGPGaussianProcessSurrogate
+from baybe.surrogates.transfergpbo import MHGPGaussianProcessSurrogate, SHGPGaussianProcessSurrogate
 from benchmarks.definition import TransferLearningRegressionSettings
 from benchmarks.definition.regression import REGRESSION_METRICS
 
@@ -113,6 +113,7 @@ def run_tl_regression_benchmark(
                 tl_models = [
                     {"name": "GP_Index_Kernel", "model": GaussianProcessSurrogate()},
                     {"name": "MHGP", "model": MHGPGaussianProcessSurrogate()},
+                    {"name": "SHGP", "model": SHGPGaussianProcessSurrogate()},
                     {
                         "name": "Karins_Source_Prior",
                         "model": SourcePriorGaussianProcessSurrogate(),
