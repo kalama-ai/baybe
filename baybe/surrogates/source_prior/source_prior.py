@@ -29,6 +29,147 @@ from baybe.surrogates.gaussian_process.presets.default import (
 )
 
 
+class GPBuilder:
+    """Shared GP builder using BayBE's kernel and noise factories.
+
+    This class encapsulates the GP construction logic from SourcePriorGaussianProcessSurrogate
+    to ensure consistent GP creation across all transfer learning approaches.
+
+    The builder replicates the exact logic from SourcePriorGaussianProcessSurrogate._fit_with_and_without_prior
+    to guarantee that both source_prior and transfergpbo approaches use identical underlying GP models,
+    enabling fair performance comparisons.
+
+    Args:
+        searchspace: The search space (typically reduced, without TaskParameter).
+        kernel_factory: The kernel factory from the surrogate (e.g., self.kernel_factory).
+
+    Examples:
+        >>> from baybe.searchspace import SearchSpace
+        >>> from baybe.surrogates.gaussian_process.presets.default import DefaultKernel
+        >>>
+        >>> # Create builder with BayBE configuration
+        >>> builder = BayBEGPBuilder(searchspace, DefaultKernel())
+        >>>
+        >>> # Create source GP (no prior)
+        >>> source_gp = builder.create_gp(X_source, Y_source)
+        >>>
+        >>> # Create target GP with source prior
+        >>> target_gp = builder.create_gp(X_target, Y_target, prior=source_gp)
+    """
+
+    def __init__(
+        self,
+        searchspace,  #: "SearchSpace",
+        kernel_factory,  #: "Kernel"
+    ) -> None:
+        from baybe.surrogates.gaussian_process.core import _ModelContext
+
+        self.searchspace = searchspace
+        self.kernel_factory = kernel_factory
+        self._context = _ModelContext(searchspace)
+
+    def create_gp(
+        self, train_x: Tensor, train_y: Tensor, prior: SingleTaskGP | None = None
+    ) -> SingleTaskGP:
+        """Create GP using BayBE's standard configuration.
+
+        This method replicates the logic from SourcePriorGaussianProcessSurrogate._fit_with_and_without_prior
+        to ensure identical GP construction across all transfer learning approaches.
+
+        Args:
+            train_x: Training input data.
+            train_y: Training target data.
+            prior: Optional prior GP to use as mean function (for source_prior approach).
+                  When provided, the prior GP's mean function will be used as the mean module
+                  for the new GP, enabling transfer learning through prior knowledge.
+
+        Returns:
+            Fitted SingleTaskGP model using BayBE's kernel and noise configuration.
+
+        Raises:
+            RuntimeError: If GP fitting fails after multiple attempts.
+        """
+        import botorch
+        import gpytorch
+
+        from baybe.surrogates.gaussian_process.presets.default import (
+            _default_noise_factory,
+        )
+
+        numerical_idxs = self._context.get_numerical_indices(train_x.shape[-1])
+
+        # Configure mean module and transforms based on prior
+        if prior is None:
+            # Standard GP without prior knowledge
+            mean_module = gpytorch.means.ConstantMean()
+            # For GPs, we let botorch handle the scaling.
+            input_transform = botorch.models.transforms.Normalize(
+                train_x.shape[-1],
+                bounds=self._context.parameter_bounds,
+                indices=numerical_idxs,
+            )
+            outcome_transform = botorch.models.transforms.Standardize(1)
+        else:
+            # Use the provided prior GP as mean function (source_prior approach)
+            from baybe.surrogates.source_prior.source_prior import GPyTMean
+
+            prior_model = deepcopy(prior)
+            mean_module = GPyTMean(prior_model)
+            input_transform = prior_model.input_transform
+            outcome_transform = prior_model.outcome_transform
+
+        # Extract the batch shape of the training data
+        batch_shape = train_x.shape[:-2]
+        mean_module.batch_shape = batch_shape
+
+        # Define the covariance module for the numeric dimensions using BayBE's kernel factory
+        base_covar_module = self.kernel_factory(
+            self._context.searchspace, train_x, train_y
+        ).to_gpytorch(
+            ard_num_dims=train_x.shape[-1] - self._context.n_task_dimensions,
+            active_dims=numerical_idxs,
+            batch_shape=batch_shape,
+        )
+
+        # Handle multi-task kernels (though reduced searchspace shouldn't have tasks)
+        if not self._context.is_multitask:
+            covar_module = base_covar_module
+        else:
+            # This branch should rarely be hit since we work with reduced searchspace
+            task_covar_module = gpytorch.kernels.IndexKernel(
+                num_tasks=self._context.n_tasks,
+                active_dims=self._context.task_idx,
+                rank=self._context.n_tasks,
+            )
+            covar_module = base_covar_module * task_covar_module
+
+        # Create GP likelihood with BayBE's noise configuration
+        noise_prior = _default_noise_factory(
+            self._context.searchspace, train_x, train_y
+        )
+        likelihood = gpytorch.likelihoods.GaussianLikelihood(
+            noise_prior=noise_prior[0].to_gpytorch(), batch_shape=batch_shape
+        )
+        likelihood.noise = torch.tensor([noise_prior[1]])
+
+        # Construct and fit the Gaussian process
+        model = botorch.models.SingleTaskGP(
+            train_x,
+            train_y,
+            input_transform=input_transform,
+            outcome_transform=outcome_transform,
+            mean_module=mean_module,
+            covar_module=covar_module,
+            likelihood=likelihood,
+        )
+
+        # Fit the model using BayBE's standard MLL approach
+        mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(model.likelihood, model)
+        botorch.fit.fit_gpytorch_mll(mll, max_attempts=50)
+
+        return model
+
+
 class GPyTMean(gpytorch.means.Mean):
     """GPyTorch mean module using a trained GP as prior mean.
 
@@ -277,96 +418,96 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
 
         return source_data, (X_target, Y_target)
 
-    def _fit_with_and_without_prior(
-        self,
-        searchspace: SearchSpace,
-        train_x: Tensor,
-        train_y: Tensor,
-        prior: SingleTaskGP = None,
-    ):
-        """Fit a Gaussian Process with or without a prior.
+    # def _fit_with_and_without_prior(
+    #     self,
+    #     searchspace: SearchSpace,
+    #     train_x: Tensor,
+    #     train_y: Tensor,
+    #     prior: SingleTaskGP = None,
+    # ):
+    #     """Fit a Gaussian Process with or without a prior.
 
-        Args:
-            searchspace: The search space for the problem.
-            train_x: Training input data.
-            train_y: Training target data.
-            prior: Optional prior GP to use as mean function.
+    #     Args:
+    #         searchspace: The search space for the problem.
+    #         train_x: Training input data.
+    #         train_y: Training target data.
+    #         prior: Optional prior GP to use as mean function.
 
-        Returns:
-            Fitted SingleTaskGP model.
-        """
-        import botorch
-        import gpytorch
-        import torch
+    #     Returns:
+    #         Fitted SingleTaskGP model.
+    #     """
+    #     import botorch
+    #     import gpytorch
+    #     import torch
 
-        context = _ModelContext(searchspace)
+    #     context = _ModelContext(searchspace)
 
-        numerical_idxs = context.get_numerical_indices(train_x.shape[-1])
+    #     numerical_idxs = context.get_numerical_indices(train_x.shape[-1])
 
-        if prior is None:
-            mean_module = gpytorch.means.ConstantMean()
-            # For GPs, we let botorch handle the scaling.
-            input_transform = botorch.models.transforms.Normalize(
-                train_x.shape[-1],
-                bounds=context.parameter_bounds,
-                indices=numerical_idxs,
-            )
-            outcome_transform = botorch.models.transforms.Standardize(1)
+    #     if prior is None:
+    #         mean_module = gpytorch.means.ConstantMean()
+    #         # For GPs, we let botorch handle the scaling.
+    #         input_transform = botorch.models.transforms.Normalize(
+    #             train_x.shape[-1],
+    #             bounds=context.parameter_bounds,
+    #             indices=numerical_idxs,
+    #         )
+    #         outcome_transform = botorch.models.transforms.Standardize(1)
 
-        else:
-            # Use the provided prior GP as mean function
-            prior_model = deepcopy(prior)
-            mean_module = GPyTMean(prior_model)
-            input_transform = prior_model.input_transform
-            outcome_transform = prior_model.outcome_transform
+    #     else:
+    #         # Use the provided prior GP as mean function
+    #         prior_model = deepcopy(prior)
+    #         mean_module = GPyTMean(prior_model)
+    #         input_transform = prior_model.input_transform
+    #         outcome_transform = prior_model.outcome_transform
 
-        # extract the batch shape of the training data
-        batch_shape = train_x.shape[:-2]
-        mean_module.batch_shape = batch_shape
+    #     # extract the batch shape of the training data
+    #     batch_shape = train_x.shape[:-2]
+    #     mean_module.batch_shape = batch_shape
 
-        # Define the covariance module for the numeric dimensions
-        base_covar_module = self.kernel_factory(
-            context.searchspace, train_x, train_y
-        ).to_gpytorch(
-            ard_num_dims=train_x.shape[-1] - context.n_task_dimensions,
-            active_dims=numerical_idxs,
-            batch_shape=batch_shape,
-        )
-        # Note: Prior base kernel handling is currently not implemented
-        # as it's not needed for the current use case
+    #     # Define the covariance module for the numeric dimensions
+    #     base_covar_module = self.kernel_factory(
+    #         context.searchspace, train_x, train_y
+    #     ).to_gpytorch(
+    #         ard_num_dims=train_x.shape[-1] - context.n_task_dimensions,
+    #         active_dims=numerical_idxs,
+    #         batch_shape=batch_shape,
+    #     )
+    #     # Note: Prior base kernel handling is currently not implemented
+    #     # as it's not needed for the current use case
 
-        # Create GP covariance
-        if not context.is_multitask:
-            covar_module = base_covar_module
-        else:
-            task_covar_module = gpytorch.kernels.IndexKernel(
-                num_tasks=context.n_tasks,
-                active_dims=context.task_idx,
-                rank=context.n_tasks,  # TODO: make controllable
-            )
-            covar_module = base_covar_module * task_covar_module
+    #     # Create GP covariance
+    #     if not context.is_multitask:
+    #         covar_module = base_covar_module
+    #     else:
+    #         task_covar_module = gpytorch.kernels.IndexKernel(
+    #             num_tasks=context.n_tasks,
+    #             active_dims=context.task_idx,
+    #             rank=context.n_tasks,  # TODO: make controllable
+    #         )
+    #         covar_module = base_covar_module * task_covar_module
 
-        # Create GP likelihood
-        noise_prior = _default_noise_factory(context.searchspace, train_x, train_y)
-        likelihood = gpytorch.likelihoods.GaussianLikelihood(
-            noise_prior=noise_prior[0].to_gpytorch(), batch_shape=batch_shape
-        )
-        likelihood.noise = torch.tensor([noise_prior[1]])
+    #     # Create GP likelihood
+    #     noise_prior = _default_noise_factory(context.searchspace, train_x, train_y)
+    #     likelihood = gpytorch.likelihoods.GaussianLikelihood(
+    #         noise_prior=noise_prior[0].to_gpytorch(), batch_shape=batch_shape
+    #     )
+    #     likelihood.noise = torch.tensor([noise_prior[1]])
 
-        # Construct and fit the Gaussian process
-        model = botorch.models.SingleTaskGP(
-            train_x,
-            train_y,
-            input_transform=input_transform,
-            outcome_transform=outcome_transform,
-            mean_module=mean_module,
-            covar_module=covar_module,
-            likelihood=likelihood,
-        )
+    #     # Construct and fit the Gaussian process
+    #     model = botorch.models.SingleTaskGP(
+    #         train_x,
+    #         train_y,
+    #         input_transform=input_transform,
+    #         outcome_transform=outcome_transform,
+    #         mean_module=mean_module,
+    #         covar_module=covar_module,
+    #         likelihood=likelihood,
+    #     )
 
-        mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(model.likelihood, model)
-        botorch.fit.fit_gpytorch_mll(mll, max_attempts=50)
-        return model
+    #     mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(model.likelihood, model)
+    #     botorch.fit.fit_gpytorch_mll(mll, max_attempts=50)
+    #     return model
 
     def _reduce_searchspace(self, searchspace: SearchSpace) -> SearchSpace:
         """Remove TaskParameter from a SearchSpace if it exists.
@@ -444,20 +585,19 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
         # Remove task parameter from searchspace before training the GPs
         reduced_searchspace = self._reduce_searchspace(searchspace=self._searchspace)
 
-        # Fit the source GP
-        self._source_gp = self._fit_with_and_without_prior(
-            train_x=X_source,
-            train_y=Y_source,
-            prior=None,
-            searchspace=reduced_searchspace,
+        # Create shared GP builder for consistent GP construction
+        gp_builder = GPBuilder(
+            searchspace=reduced_searchspace, kernel_factory=self.kernel_factory
+        )
+
+        # Fit the source GP using shared builder
+        self._source_gp = gp_builder.create_gp(
+            train_x=X_source, train_y=Y_source, prior=None
         )
 
         # Fit target model using source posterior as prior
-        self._target_gp = self._fit_with_and_without_prior(
-            train_x=X_target,
-            train_y=Y_target,
-            prior=self._source_gp,
-            searchspace=reduced_searchspace,
+        self._target_gp = gp_builder.create_gp(
+            train_x=X_target, train_y=Y_target, prior=self._source_gp
         )
 
     @override

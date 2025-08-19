@@ -13,14 +13,17 @@ from baybe.exceptions import ModelNotTrainedError
 from baybe.parameters import TaskParameter
 from baybe.parameters.base import Parameter  # Add this import
 from baybe.surrogates.base import Surrogate
+from baybe.surrogates import GaussianProcessSurrogate
 
 # Add these imports for the scaler factory
 if TYPE_CHECKING:
     from botorch.models.transforms.input import InputTransform
 
+from baybe.surrogates.source_prior.source_prior import GPBuilder
+
 
 @define
-class TransferGPBOSurrogate(Surrogate, ABC):
+class TransferGPBOSurrogate(GaussianProcessSurrogate, ABC):
     """Abstract base class for all transfergpbo model wrappers.
 
     This class handles the common BayBE integration logic for transfer learning
@@ -67,56 +70,50 @@ class TransferGPBOSurrogate(Surrogate, ABC):
         """
         pass
 
-    def _identify_target_task(self) -> int:
-        """Identify target task from TaskParameter active_values.
+    def _identify_target_task(self) -> tuple[int, float]:
+        """Identify the TaskParameter and return its column index and target value.
 
-        Extracts the target task from the TaskParameter's active_values
-        and converts the task name to its corresponding numeric ID.
+        This function identifies the TaskParameter within the search space, retrieves
+        its active value, and returns both the column index of the TaskParameter and
+        the computational representation value for the active value. This is useful
+        for filtering tensor rows that correspond to the target task.
 
         Returns:
-            Numeric ID of the target task.
+            A tuple containing:
+            - task_idx (int): The column index of the TaskParameter in the computational
+                            representation of the search space
+            - target_value (float): The computational representation value for the
+                        active value of the TaskParameter (used for filtering)
 
-        Raises:
-            ValueError: If no TaskParameter found in search space.
-            ValueError: If not exactly one active task is specified.
+        Example:
+            >>> # Filter tensor rows for target task
+            >>> task_idx, target_value = _identify_target_task(searchspace)
+            >>> target_mask = candidates_comp_scaled[:, task_idx] == target_value
+            >>> target_candidates = candidates_comp_scaled[target_mask]
         """
-        # Find the TaskParameter
-        task_param = None
-        for param in self._searchspace.parameters:
-            if isinstance(param, TaskParameter):
-                task_param = param
-                break
+        searchspace = self._searchspace
+        # Find the TaskParameter in the search space
+        task_params = [
+            p for p in searchspace.parameters if isinstance(p, TaskParameter)
+        ]
 
-        if task_param is None:
-            raise ValueError(
-                "No TaskParameter found in search space. "
-                "Transfer learning requires a TaskParameter."
-            )
+        task_param = task_params[0]
 
-        # Get active values (target tasks)
-        active_values = task_param.active_values
+        # Get the active value
+        active_value = task_param.active_values[0]
 
-        if len(active_values) != 1:
-            raise ValueError(
-                f"Got {len(active_values)}: {active_values} actives values. "
-                f"Transfer learning requires exactly one target task."
-            )
+        # Get the index of the TaskParameter in the computational representation
+        task_idx = searchspace.task_idx
 
-        target_task_name = active_values[0]
+        # Get the computational representation value for the active value
+        # TaskParameter uses INT encoding, so comp_df has a single column with
+        # integer values
+        comp_df = task_param.comp_df
 
-        # Convert task name to numeric ID using TaskParameter's values order
-        # TaskParameter uses integer encoding: values[0]→0, values[1]→1, etc.
-        task_name_to_id = {name: idx for idx, name in enumerate(task_param.values)}
+        # Extract the single computational representation value
+        target_value = float(comp_df.loc[active_value].iloc[0])
 
-        if target_task_name not in task_name_to_id:
-            raise ValueError(
-                f"Target task '{target_task_name}' not found in TaskParameter values: "
-                f"{list(task_name_to_id.keys())}"
-            )
-
-        target_task_id = task_name_to_id[target_task_name]
-
-        return target_task_id
+        return task_idx, target_value
 
     def _validate_transfer_learning_context(self) -> None:
         """Validate that we have a proper transfer learning setup.
@@ -145,19 +142,54 @@ class TransferGPBOSurrogate(Surrogate, ABC):
                 f"but got {actual_total_dims} from search space."
             )
 
-    @staticmethod
-    @override
-    def _make_parameter_scaler_factory(
-        parameter: Parameter,
-    ) -> type["InputTransform"] | None:
-        """Prevent task parameters from being normalized."""
-        from botorch.models.transforms.input import Normalize
+    # @staticmethod
+    # @override
+    # def _make_parameter_scaler_factory(
+    #     parameter: Parameter,
+    # ) -> type["InputTransform"] | None:
+    #     """Prevent task parameters from being normalized."""
+    #     from botorch.models.transforms.input import Normalize
 
+    #     from baybe.parameters import TaskParameter
+
+    #     if isinstance(parameter, TaskParameter):
+    #         return None  # No scaling for task parameters
+    #     return Normalize  # Normal scaling for continuous parameters
+
+    def _reduce_searchspace(self, searchspace):
+        """Remove TaskParameter from a SearchSpace if it exists.
+
+        Args:
+            searchspace: The SearchSpace to process.
+
+        Returns:
+            A new SearchSpace without TaskParameter, or the original SearchSpace
+            if no TaskParameter exists.
+        """
         from baybe.parameters import TaskParameter
+        from baybe.searchspace import SearchSpace
 
-        if isinstance(parameter, TaskParameter):
-            return None  # No scaling for task parameters
-        return Normalize  # Normal scaling for continuous parameters
+        # Get all parameters from the search space
+        parameters = list(searchspace.parameters)
+
+        # Filter out TaskParameter instances
+        filtered_parameters = [
+            param for param in parameters if not isinstance(param, TaskParameter)
+        ]
+
+        # If no TaskParameter was found, return the original searchspace
+        if len(filtered_parameters) == len(parameters):
+            return searchspace
+
+        # If all parameters were TaskParameters, create empty SearchSpace
+        if not filtered_parameters:
+            return SearchSpace()
+
+        # Create new SearchSpace with filtered parameters and constraints
+        return SearchSpace.from_product(
+            parameters=filtered_parameters,
+            constraints=list(searchspace.constraints),
+        )
 
     @override
     def _fit(self, train_x: Tensor, train_y: Tensor) -> None:
@@ -166,7 +198,7 @@ class TransferGPBOSurrogate(Surrogate, ABC):
         This method handles the common training workflow for all transfergpbo models:
         1. Validate transfer learning context
         2. Identify target task from TaskParameter
-        3. Reorder tensors to match transfergpbo format
+        3. Create GPBuilder and reduced searchspace
         4. Train the model using meta_fit() and fit()
 
         Args:
@@ -188,12 +220,20 @@ class TransferGPBOSurrogate(Surrogate, ABC):
         self._validate_transfer_learning_context()
 
         # 2. Identify target task from TaskParameter active_values
-        self._target_task_id = self._identify_target_task()
-        self._task_column_idx = self._searchspace.task_idx
+        self._task_column_idx, self._target_task_id = self._identify_target_task()
 
-        # 4. Create model if not exists
+        # 3. Create reduced searchspace (without TaskParameter) and GPBuilder
+        reduced_searchspace = self._reduce_searchspace(self._searchspace)
+        gp_builder = GPBuilder(
+            searchspace=reduced_searchspace, kernel_factory=self.kernel_factory
+        )
+
+        # 4. Create model if not exists and set GPBuilder
         if self._model is None:
             self._model = self._create_model()
+
+        # Pass the GPBuilder to the model
+        self._model.set_gp_builder(gp_builder)
 
         # 5. Train the transfergpbo model
         # meta_fit: Train source GPs on residuals

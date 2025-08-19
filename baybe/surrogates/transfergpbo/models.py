@@ -1,3 +1,8 @@
+# Source GP defintion requires
+# X_source shape (in Model)
+# parameter_bounds from search space (SP in Wrapper)
+# pasing context is sufficient
+
 """Torch Models for "Transfer Learning with GPs for BO" by Tighineanu et al. (2022)."""
 
 import torch
@@ -10,7 +15,13 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 from torch import Tensor
 from typing_extensions import override
 
-from baybe.surrogates.transfergpbo.utils import is_pd, nearest_pd
+from baybe.surrogates.transfergpbo.utils import (
+    is_pd,
+    nearest_pd,
+    nearest_pd_hgp,
+    compute_cholesky,
+)
+from baybe.surrogates.source_prior.source_prior import GPBuilder
 
 
 class MHGPModel(Model):
@@ -70,6 +81,18 @@ class MHGPModel(Model):
         """The target Gaussian Process model."""
         self._fitted: bool = False
         """Whether the model has been fully fitted (including target task)."""
+
+        # NEW: GP builder for consistent GP construction
+        self.gp_builder: "GPBuilder" | None = None
+        """GP builder for creating GPs with BayBE's configuration."""
+
+    def set_gp_builder(self, gp_builder: "GPBuilder") -> None:
+        """Set the GP builder for consistent GP construction.
+
+        Args:
+            gp_builder: BayBEGPBuilder instance configured with BayBE's kernel/noise settings.
+        """
+        self.gp_builder = gp_builder
 
     @property
     def num_outputs(self) -> int:
@@ -161,10 +184,16 @@ class MHGPModel(Model):
             residuals = residuals.detach().clone()
             X_source_clean = X_source.detach().clone()
 
-            # Create and fit new GP
-            gp = SingleTaskGP(X_source_clean, residuals)
-            mll = ExactMarginalLogLikelihood(gp.likelihood, gp)
-            fit_gpytorch_mll(mll)
+            # Create GP using BayBE configuration if builder available
+            if self.gp_builder is not None:
+                print(f"Using GPBuilder for source GP {i}.")
+                gp = self.gp_builder.create_gp(X_source_clean, residuals)
+            else:
+                print(f"No GPBuilder available for source GP {i}, using fallback.")
+                # Fallback to original logic for backward compatibility
+                gp = SingleTaskGP(X_source_clean, residuals)
+                mll = ExactMarginalLogLikelihood(gp.likelihood, gp)
+                fit_gpytorch_mll(mll)
 
             self.source_gps.append(gp)
 
@@ -207,11 +236,18 @@ class MHGPModel(Model):
             residuals = residuals.detach().clone()
             X_target_clean = X_target.detach().clone()
 
-            # Create and fit target GP
-            self.target_gp = SingleTaskGP(X_target_clean, residuals)
-
-            mll = ExactMarginalLogLikelihood(self.target_gp.likelihood, self.target_gp)
-            fit_gpytorch_mll(mll)
+            # Create target GP using BayBE configuration if builder available
+            if self.gp_builder is not None:
+                print("Using GPBuilder for target GP.")
+                self.target_gp = self.gp_builder.create_gp(X_target_clean, residuals)
+            else:
+                print("No GPBuilder available, using fallback.")
+                # Fallback to original logic
+                self.target_gp = SingleTaskGP(X_target_clean, residuals)
+                mll = ExactMarginalLogLikelihood(
+                    self.target_gp.likelihood, self.target_gp
+                )
+                fit_gpytorch_mll(mll)
 
         self._fitted = True
 
@@ -416,3 +452,276 @@ class MHGPModel(Model):
             covar_matrix = nearest_pd(covar_matrix)
 
         return total_mean, covar_matrix
+
+
+class SHGPModel(MHGPModel):
+    """Sequential Hierarchical GP model with uncertainty propagation.
+
+    This model implements the SHGP (Sequential Hierarchical GP) approach from
+    "Transfer Learning with Gaussian Processes for Bayesian Optimization" by
+    Tighineanu et al. (2022). SHGP improves over MHGP by propagating uncertainty
+    through the stack of GPs.
+
+    The key idea is to include, in addition to the mean, also the uncertainty
+    of the source posterior into the prior of the target GP. This is achieved
+    by adding the posterior covariance of the previous GP as an additional
+    kernel term when training each GP in the stack.
+
+    For the target prior, SHGP uses:
+    p[f_t(x)] = N[m_s(x), K_s(x,x) + K_t^(0)(x,x)]
+
+    Where:
+    - m_s(x): posterior mean from source GP
+    - K_s(x,x): posterior covariance from source GP (uncertainty propagation)
+    - K_t^(0)(x,x): prior covariance of target GP
+
+    Args:
+        input_dim: Dimensionality of the input space (excluding task feature).
+        numerical_stability: Flag to enable numerical stability enhancements.
+
+    Examples:
+        >>> import torch
+        >>> model = SHGPModel(input_dim=2, numerical_stability=True)
+        >>> # Training data with task indices
+        >>> X_multi = torch.tensor([[0.1, 0.2, 0], [0.3, 0.4, 0], [0.5, 0.6, 1]])
+        >>> Y = torch.tensor([[0.5], [0.7], [0.9]])
+        >>> model.meta_fit(X_multi, Y, task_feature=-1, target_task=1)
+        >>> model.fit(X_multi, Y, task_feature=-1, target_task=1)
+        >>> # Make predictions
+        >>> X_test = torch.tensor([[0.1, 0.4, 1]])
+        >>> posterior = model.posterior(X_test)
+    """
+
+    def __init__(self, input_dim: int, numerical_stability: bool = True) -> None:
+        super().__init__(input_dim, numerical_stability)
+        self._cholesky_cache: list[torch.Tensor | None] = []
+        """Cached Cholesky decompositions for each GP in the stack."""
+
+    def _compute_cholesky(
+        self, gp: SingleTaskGP, prior_cov: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Compute Cholesky decomposition for a GP with optional prior covariance.
+
+        Args:
+            gp: The GP model to compute Cholesky for.
+            prior_cov: Optional prior covariance matrix to add to the kernel.
+
+        Returns:
+            Lower triangular Cholesky decomposition.
+        """
+        if gp.train_inputs is None or gp.train_targets is None:
+            raise RuntimeError("GP must be fitted before computing Cholesky")
+
+        X_train = gp.train_inputs[0]
+
+        # Get kernel matrix
+        with torch.no_grad():
+            covar_matrix = gp.covar_module(X_train).evaluate()
+
+            # Add prior covariance if provided (this is the key SHGP modification)
+            if prior_cov is not None:
+                covar_matrix = covar_matrix + prior_cov
+
+            # Add noise
+            noise_var = gp.likelihood.noise
+            covar_matrix = (
+                covar_matrix
+                + torch.eye(
+                    covar_matrix.shape[-1],
+                    device=covar_matrix.device,
+                    dtype=covar_matrix.dtype,
+                )
+                * noise_var
+            )
+
+            # Compute Cholesky with numerical stability
+            try:
+                cholesky = torch.linalg.cholesky(covar_matrix)
+            except RuntimeError:
+                # Add jitter for numerical stability
+                jitter = 1e-6
+                while jitter < 1e-1:
+                    try:
+                        covar_matrix_jittered = (
+                            covar_matrix
+                            + torch.eye(
+                                covar_matrix.shape[-1],
+                                device=covar_matrix.device,
+                                dtype=covar_matrix.dtype,
+                            )
+                            * jitter
+                        )
+                        cholesky = torch.linalg.cholesky(covar_matrix_jittered)
+                        break
+                    except RuntimeError:
+                        jitter *= 10
+                else:
+                    raise RuntimeError(
+                        "Failed to compute Cholesky decomposition even with jitter"
+                    )
+
+            return cholesky
+
+    def _cache_cholesky_decompositions(self) -> None:
+        """Cache Cholesky decompositions for all GPs in the stack."""
+        self._cholesky_cache = []
+
+        # First source GP (no prior covariance)
+        if self.source_gps:
+            chol_0 = self._compute_cholesky(self.source_gps[0])
+            self._cholesky_cache.append(chol_0)
+
+            # Subsequent source GPs (with prior covariance from previous)
+            for i in range(1, len(self.source_gps)):
+                gp_prev = self.source_gps[i - 1]
+                gp_curr = self.source_gps[i]
+
+                # Get training inputs for current GP
+                X_curr = gp_curr.train_inputs[0]
+
+                # Get posterior covariance from previous GP at current GP's training points
+                with torch.no_grad():
+                    prior_cov = gp_prev.posterior(X_curr).covariance_matrix
+
+                chol_i = self._compute_cholesky(gp_curr, prior_cov)
+                self._cholesky_cache.append(chol_i)
+
+        # Target GP (with prior covariance from last source GP)
+        if self.target_gp is not None:
+            if self.source_gps:
+                gp_last_source = self.source_gps[-1]
+                X_target = self.target_gp.train_inputs[0]
+
+                with torch.no_grad():
+                    prior_cov = gp_last_source.posterior(X_target).covariance_matrix
+
+                chol_target = self._compute_cholesky(self.target_gp, prior_cov)
+            else:
+                chol_target = self._compute_cholesky(self.target_gp)
+
+            self._cholesky_cache.append(chol_target)
+
+    def fit(
+        self, X: Tensor, Y: Tensor, task_feature: int = -1, target_task: int = 2
+    ) -> None:
+        """Fit target GP with uncertainty propagation from source GPs.
+
+        This method extends the base MHGP fit by incorporating uncertainty
+        propagation through Cholesky decomposition caching.
+        """
+        # First call parent fit method
+        super().fit(X, Y, task_feature, target_task)
+
+        # Then cache Cholesky decompositions for SHGP uncertainty propagation
+        self._cache_cholesky_decompositions()
+
+    def _predict_from_stack(
+        self, X: Tensor, up_to_task_id: int
+    ) -> tuple[Tensor, Tensor]:
+        """Predict using the SHGP stack with uncertainty propagation.
+
+        This method overrides the MHGP prediction to implement proper uncertainty
+        propagation through the stack. The key difference is that SHGP adds the
+        posterior covariance from previous GPs to the current prediction's covariance.
+
+        Args:
+            X: Input features (without task indices).
+            up_to_task_id: Task ID to predict up to (inclusive).
+
+        Returns:
+            Tuple of (mean, covariance) predictions with uncertainty propagation.
+        """
+        device = X.device
+        dtype = X.dtype
+        n_points = X.shape[0]
+
+        # Initialize mean prediction (same as MHGP)
+        total_mean = torch.zeros(n_points, 1, dtype=dtype, device=device)
+
+        # Check if we're predicting from target GP
+        if up_to_task_id == len(self.source_gps):
+            # Add predictions from all source GPs (same as MHGP)
+            for gp in self.source_gps:
+                gp_posterior = gp.posterior(X)
+                total_mean += gp_posterior.mean
+
+            if self.target_gp is None:
+                print(
+                    "No target data provided."
+                    "Falling back to the last model in the stack for predictions."
+                )
+                if self.source_gps:
+                    # SHGP: Use covariance with uncertainty propagation
+                    covar_matrix = self._predict_covariance_with_uncertainty(
+                        X, len(self.source_gps) - 1
+                    )
+                else:
+                    covar_matrix = torch.eye(n_points, dtype=dtype, device=device)
+            else:
+                # Add target GP prediction
+                target_posterior = self.target_gp.posterior(X)
+                total_mean += target_posterior.mean
+
+                # SHGP: Use target covariance with uncertainty propagation from all source GPs
+                covar_matrix = self._predict_covariance_with_uncertainty(
+                    X, len(self.source_gps)
+                )
+
+        else:
+            # Predicting from source GPs only (same mean as MHGP)
+            for task_id in range(up_to_task_id + 1):
+                gp_posterior = self.source_gps[task_id].posterior(X)
+                total_mean += gp_posterior.mean
+
+            # SHGP: Use covariance with uncertainty propagation
+            covar_matrix = self._predict_covariance_with_uncertainty(X, up_to_task_id)
+
+        # Apply numerical stability if needed
+        if self.numerical_stability and not is_pd(covar_matrix):
+            covar_matrix = nearest_pd(covar_matrix)
+
+        return total_mean, covar_matrix
+
+    def _predict_covariance_with_uncertainty(self, X: Tensor, up_to_idx: int) -> Tensor:
+        """Predict covariance with uncertainty propagation from the stack.
+
+        This implements the core SHGP covariance computation:
+        K_SHGP(x,x') = K_current(x,x') + sum(K_prev_posterior(x,x'))
+
+        Args:
+            X: Input points for prediction.
+            up_to_idx: Index of the GP to predict up to (inclusive).
+
+        Returns:
+            Covariance matrix with uncertainty propagation.
+        """
+        if up_to_idx < 0:
+            # No GPs in stack yet
+            n_points = X.shape[0]
+            return torch.eye(n_points, dtype=X.dtype, device=X.device)
+
+        # Start with the current GP's covariance
+        if up_to_idx < len(self.source_gps):
+            # Source GP
+            current_gp = self.source_gps[up_to_idx]
+        else:
+            # Target GP
+            current_gp = self.target_gp
+
+        if current_gp is None:
+            # Fallback to identity
+            n_points = X.shape[0]
+            return torch.eye(n_points, dtype=X.dtype, device=X.device)
+
+        # Get current GP's posterior covariance
+        with torch.no_grad():
+            covar_matrix = current_gp.posterior(X).covariance_matrix
+
+            # SHGP: Add uncertainty from all previous GPs in the stack
+            for i in range(up_to_idx):
+                if i < len(self.source_gps):
+                    prev_gp = self.source_gps[i]
+                    prev_covar = prev_gp.posterior(X).covariance_matrix
+                    covar_matrix = covar_matrix + prev_covar
+
+        return covar_matrix

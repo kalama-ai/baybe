@@ -30,6 +30,21 @@ def nearest_pd(matrix: Tensor) -> Tensor:
     return eigenvecs @ torch.diag(eigenvals_clipped) @ eigenvecs.T
 
 
+def nearest_pd_hgp(matrix: Tensor) -> Tensor:
+    """Calculate nearest positive-definite matrix for HGP with proper batch handling."""
+    # Eigendecomposition
+    eigenvals, eigenvecs = torch.linalg.eigh(matrix)
+
+    # Account for floating-point accuracy
+    spacing = torch.finfo(matrix.dtype).eps * torch.norm(matrix)
+
+    # Clip eigenvalues at spacing
+    eigenvals_clipped = torch.clamp(eigenvals, min=spacing)
+
+    # Reconstruct matrix using diag_embed to handle batch dimensions properly
+    return eigenvecs @ torch.diag_embed(eigenvals_clipped) @ eigenvecs.transpose(-2, -1)
+
+
 def compute_cholesky(matrix: Tensor) -> Tensor:
     """Compute Cholesky with iterative diagonal regularization (TransferGPBO style)."""
     matrix_copy = matrix.clone()
