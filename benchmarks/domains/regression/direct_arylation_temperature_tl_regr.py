@@ -9,8 +9,8 @@ from baybe.parameters import (
 )
 from baybe.searchspace import SearchSpace
 from benchmarks.definition import (
-    TransferLearningRegression,
-    TransferLearningRegressionSettings,
+    TransferLearningRegressionBenchmark,
+    TransferLearningRegressionBenchmarkSettings,
 )
 from benchmarks.domains.regression.base import run_tl_regression_benchmark
 from benchmarks.domains.transfer_learning.direct_arylation.temperature_tl import (
@@ -43,7 +43,7 @@ def create_searchspaces(
 
 
 def direct_arylation_temperature_tl_regr(
-    settings: TransferLearningRegressionSettings,
+    settings: TransferLearningRegressionBenchmarkSettings,
 ) -> pd.DataFrame:
     """Benchmark function for comparing regression performance of GP vs TL models.
 
@@ -70,14 +70,14 @@ def direct_arylation_temperature_tl_regr(
 
 
 # Define the benchmark settings
-benchmark_config = TransferLearningRegressionSettings(
-    num_mc_iterations=2,  # 30,  # 5,
-    max_train_points=2,  # 10,  # 10,
-    source_fractions=[0.01],  # , 0.05, 0.1, 0.2],  # 0.5, 0.7, 0.9],
+benchmark_config = TransferLearningRegressionBenchmarkSettings(
+    n_mc_iterations=2,  # 30,  # 5,
+    max_n_train_points=2,  # 10,  # 10,
+    source_fractions=(0.01,),  # , 0.05, 0.1, 0.2],  # 0.5, 0.7, 0.9],
     noise_std=0.0,  # Not used for real data
 )
 
 # Create the benchmark
-direct_arylation_temperature_tl_regr_benchmark = TransferLearningRegression(
+direct_arylation_temperature_tl_regr_benchmark = TransferLearningRegressionBenchmark(
     function=direct_arylation_temperature_tl_regr, settings=benchmark_config
 )

@@ -11,8 +11,8 @@ from baybe.parameters import (
 from baybe.searchspace import SearchSpace
 from baybe.targets import NumericalTarget
 from benchmarks.definition import (
-    TransferLearningRegression,
-    TransferLearningRegressionSettings,
+    TransferLearningRegressionBenchmark,
+    TransferLearningRegressionBenchmarkSettings,
 )
 from benchmarks.domains.regression.base import run_tl_regression_benchmark
 from benchmarks.domains.transfer_learning.aryl_halides.base import (
@@ -62,7 +62,7 @@ def create_objective() -> SingleTargetObjective:
 
 
 def aryl_halide_CT_I_BM_tl_regr(
-    settings: TransferLearningRegressionSettings,
+    settings: TransferLearningRegressionBenchmarkSettings,
 ) -> pd.DataFrame:
     """Benchmark function for comparing regression performance of GP vs TL models.
 
@@ -89,15 +89,15 @@ def aryl_halide_CT_I_BM_tl_regr(
 
 
 # Define the benchmark settings
-benchmark_config = TransferLearningRegressionSettings(
-    num_mc_iterations=2,  # 30,
-    max_train_points=2,  # 10,
-    source_fractions=[0.01, 0.05, 0.1],
+benchmark_config = TransferLearningRegressionBenchmarkSettings(
+    n_mc_iterations=2,  # 30,
+    max_n_train_points=2,  # 10,
+    source_fractions=(0.01, 0.05),  # , 0.1),
     noise_std=0.0,  # Not used for real data
 )
 
 # Create the benchmark
-aryl_halide_CT_I_BM_tl_regr_benchmark = TransferLearningRegression(
+aryl_halide_CT_I_BM_tl_regr_benchmark = TransferLearningRegressionBenchmark(
     function=aryl_halide_CT_I_BM_tl_regr,
     settings=benchmark_config,
 )

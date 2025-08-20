@@ -13,18 +13,17 @@ from baybe.objectives import SingleTargetObjective
 from baybe.parameters import NumericalContinuousParameter, TaskParameter
 from baybe.searchspace import SearchSpace
 from baybe.targets import NumericalTarget
-from benchmarks.definition.regression import TransferLearningRegressionSettings
+from benchmarks.definition.regression import TransferLearningRegressionBenchmarkSettings
 from benchmarks.domains.regression.base import run_tl_regression_benchmark
 from benchmarks.domains.transfer_learning.quadratic.base import load_data
 
 # Define the benchmark settings
-benchmark_config = TransferLearningRegressionSettings(
+benchmark_config = TransferLearningRegressionBenchmarkSettings(
     random_seed=42,
-    num_mc_iterations=2,  # 30,
-    max_train_points=2,  # 5,
-    source_fractions=[0.01],  # , 0.02, 0.05, 0.10],
+    n_mc_iterations=2,  # 30,
+    max_n_train_points=2,  # 5,
+    source_fractions=(0.01,),  # , 0.02, 0.05, 0.10],
     noise_std=0.0,  # Noise is already added in data generation
-    metrics=["RMSE", "R2", "MAE"],
 )
 
 
@@ -79,7 +78,7 @@ def create_quadratic_objective() -> SingleTargetObjective:
 
 
 def run_quadratic_tl_regression_benchmark(
-    settings: TransferLearningRegressionSettings,
+    settings: TransferLearningRegressionBenchmarkSettings,
     n_sources: int = 3,
     keep_min: bool = False,
 ) -> pd.DataFrame:

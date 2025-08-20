@@ -2,24 +2,60 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
 import pandas as pd
+from scipy.stats import kendalltau, spearmanr
+from sklearn.metrics import (
+    explained_variance_score,
+    max_error,
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score,
+    root_mean_squared_error,
+)
 from tqdm import tqdm
 
 from baybe.objectives import SingleTargetObjective
 from baybe.searchspace import SearchSpace
 from baybe.surrogates.gaussian_process.core import GaussianProcessSurrogate
 from baybe.surrogates.source_prior import SourcePriorGaussianProcessSurrogate
-from baybe.surrogates.transfergpbo import MHGPGaussianProcessSurrogate, SHGPGaussianProcessSurrogate
-from benchmarks.definition import TransferLearningRegressionSettings
-from benchmarks.definition.regression import REGRESSION_METRICS
+from baybe.surrogates.transfergpbo import (
+    MHGPGaussianProcessSurrogate,
+    SHGPGaussianProcessSurrogate,
+)
+from benchmarks.definition import TransferLearningRegressionBenchmarkSettings
+
+
+def kendall_tau_score(y_true, y_pred):
+    """Calculate Kendall's Tau correlation coefficient."""
+    tau, _ = kendalltau(y_true, y_pred)
+    return tau
+
+
+def spearman_rho_score(y_true, y_pred):
+    """Calculate Spearman's Rho correlation coefficient."""
+    rho, _ = spearmanr(y_true, y_pred)
+    return rho
+
+
+# Dictionary mapping metric names to functions
+REGRESSION_METRICS = {
+    "RMSE": root_mean_squared_error,
+    "MSE": mean_squared_error,
+    "R2": r2_score,
+    "MAE": mean_absolute_error,
+    "MAX_ERROR": max_error,
+    "EXPLAINED_VARIANCE": explained_variance_score,
+    "KENDALL_TAU": kendall_tau_score,
+    "SPEARMAN_RHO": spearman_rho_score,
+}
 
 
 def run_tl_regression_benchmark(
-    settings: TransferLearningRegressionSettings,
+    settings: TransferLearningRegressionBenchmarkSettings,
     load_data_fn: Callable[..., pd.DataFrame],
     create_searchspaces_fn: Callable[
         [pd.DataFrame], tuple[SearchSpace, SearchSpace, str, list[str], str]
@@ -71,7 +107,7 @@ def run_tl_regression_benchmark(
 
     # Create progress bar for Monte Carlo iterations
     mc_iter_bar = tqdm(
-        range(settings.num_mc_iterations),
+        range(settings.n_mc_iterations),
         desc="Monte Carlo iterations",
         unit="iter",
         position=0,
@@ -99,8 +135,8 @@ def run_tl_regression_benchmark(
 
             # Create progress bar for training points
             train_pts_bar = tqdm(
-                range(1, settings.max_train_points + 1),
-                desc=f"MC {mc_iter + 1}/{settings.num_mc_iterations},"
+                range(1, settings.max_n_train_points + 1),
+                desc=f"MC {mc_iter + 1}/{settings.n_mc_iterations},"
                 f"Source frac {fraction_source:.1f}",
                 unit="pts",
                 position=1,
@@ -121,7 +157,7 @@ def run_tl_regression_benchmark(
                 ]
                 train_indices = target_indices[:n_train_pts]
                 test_indices = target_indices[
-                    n_train_pts : n_train_pts + settings.max_train_points
+                    n_train_pts : n_train_pts + settings.max_n_train_points
                 ]
                 target_train = target_data.iloc[train_indices].copy()
                 target_test = target_data.iloc[test_indices].copy()
@@ -136,7 +172,6 @@ def run_tl_regression_benchmark(
                     vanilla_searchspace=vanilla_searchspace,
                     tl_searchspace=tl_searchspace,
                     objective=objective,
-                    metrics=settings.metrics,
                     target_column=target_column,
                     task_column=name_task,
                     task_value=target_task,
@@ -163,7 +198,6 @@ def run_tl_regression_benchmark(
 def _calculate_metrics(
     true_values: np.ndarray,
     predictions: pd.DataFrame,
-    metrics: Sequence[str],
     target_column: str,
     model_prefix: str,
 ) -> dict[str, float]:
@@ -172,7 +206,6 @@ def _calculate_metrics(
     Args:
         true_values: True target values
         predictions: Model predictions DataFrame with mean columns
-        metrics: List of metric names to calculate
         target_column: Name of the target column
         model_prefix: Prefix for result keys (e.g., "vanilla", "GP_Index_Kernel")
 
@@ -182,9 +215,7 @@ def _calculate_metrics(
     results = {}
     pred_values = predictions[f"{target_column}_mean"].values
 
-    for metric_name in metrics:
-        metric_info = REGRESSION_METRICS[metric_name]
-        metric_func = metric_info["function"]
+    for metric_name, metric_func in REGRESSION_METRICS.items():
         metric_value = metric_func(true_values, pred_values)
         results[f"{model_prefix}_{metric_name.lower()}"] = metric_value
 
@@ -200,7 +231,6 @@ def _evaluate_models(
     vanilla_searchspace: SearchSpace,
     tl_searchspace: SearchSpace,
     objective: SingleTargetObjective,
-    metrics: Sequence[str],
     target_column: str = "y",
     task_column: str | None = None,
     task_value: str | None = None,
@@ -216,7 +246,6 @@ def _evaluate_models(
         vanilla_searchspace: Search space for vanilla GP
         tl_searchspace: Search space for transfer learning models
         objective: Objective function
-        metrics: Metrics to evaluate
         target_column: Name of the target column in the data
         task_column: Name of the task column (e.g., "task" or "Temp_C")
         task_value: Value to set for the task column in test data
@@ -247,7 +276,6 @@ def _evaluate_models(
     vanilla_metrics = _calculate_metrics(
         true_values=target_test[target_column].values,
         predictions=vanilla_pred,
-        metrics=metrics,
         target_column=target_column,
         model_prefix="vanilla",
     )
@@ -280,7 +308,6 @@ def _evaluate_models(
         tl_metrics = _calculate_metrics(
             true_values=target_test[target_column].values,
             predictions=tl_pred,
-            metrics=metrics,
             target_column=target_column,
             model_prefix=model_name,
         )

@@ -5,8 +5,10 @@ from benchmarks.definition import (
     BenchmarkSettings,
     ConvergenceBenchmark,
     ConvergenceBenchmarkSettings,
-    TransferLearningRegression,
-    TransferLearningRegressionSettings,
+    RegressionBenchmark,
+    RegressionBenchmarkSettings,
+    TransferLearningRegressionBenchmark,
+    TransferLearningRegressionBenchmarkSettings,
 )
 from benchmarks.result import Result
 
@@ -15,7 +17,9 @@ __all__ = [
     "BenchmarkSettings",
     "ConvergenceBenchmark",
     "ConvergenceBenchmarkSettings",
-    "TransferLearningRegression",
-    "TransferLearningRegressionSettings",
+    "RegressionBenchmark",
+    "RegressionBenchmarkSettings",
+    "TransferLearningRegressionBenchmark",
+    "TransferLearningRegressionBenchmarkSettings",
     "Result",
 ]

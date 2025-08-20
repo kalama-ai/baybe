@@ -10,8 +10,8 @@ from __future__ import annotations
 import pandas as pd
 
 from benchmarks.definition.regression import (
-    TransferLearningRegression,
-    TransferLearningRegressionSettings,
+    TransferLearningRegressionBenchmark,
+    TransferLearningRegressionBenchmarkSettings,
 )
 from benchmarks.domains.regression.quadratic.base import (
     benchmark_config,
@@ -20,7 +20,7 @@ from benchmarks.domains.regression.quadratic.base import (
 
 
 def quadratic_same_min_few_sources_tl_regr(
-    settings: TransferLearningRegressionSettings,
+    settings: TransferLearningRegressionBenchmarkSettings,
 ) -> pd.DataFrame:
     """Regression benchmark for TL with quadratic functions and few sources.
 
@@ -54,6 +54,6 @@ def quadratic_same_min_few_sources_tl_regr(
 
 
 # Create the benchmark
-quadratic_same_min_few_sources_tl_regr_benchmark = TransferLearningRegression(
+quadratic_same_min_few_sources_tl_regr_benchmark = TransferLearningRegressionBenchmark(
     function=quadratic_same_min_few_sources_tl_regr, settings=benchmark_config
 )

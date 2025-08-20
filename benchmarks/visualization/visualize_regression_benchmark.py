@@ -8,8 +8,19 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from benchmarks.definition.regression import METRICS_HIGHER_IS_BETTER
 from benchmarks.visualization.visualize_convergence_benchmark import load_benchmark_data
+
+# Define whether higher values are better for each metric
+METRICS_HIGHER_IS_BETTER = {
+    "RMSE": False,
+    "MSE": False,
+    "R2": True,
+    "MAE": False,
+    "MAX_ERROR": False,
+    "EXPLAINED_VARIANCE": True,
+    "KENDALL_TAU": True,
+    "SPEARMAN_RHO": True,
+}
 
 plt.style.use("seaborn-v0_8-whitegrid")
 sns.set_palette("colorblind")
