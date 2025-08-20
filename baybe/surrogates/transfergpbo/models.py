@@ -15,13 +15,11 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 from torch import Tensor
 from typing_extensions import override
 
+from baybe.surrogates.source_prior.source_prior import GPBuilder
 from baybe.surrogates.transfergpbo.utils import (
     is_pd,
     nearest_pd,
-    nearest_pd_hgp,
-    compute_cholesky,
 )
-from baybe.surrogates.source_prior.source_prior import GPBuilder
 
 
 class MHGPModel(Model):
@@ -186,7 +184,6 @@ class MHGPModel(Model):
 
             # Create GP using BayBE configuration if builder available
             if self.gp_builder is not None:
-                print(f"Using GPBuilder for source GP {i}.")
                 gp = self.gp_builder.create_gp(X_source_clean, residuals)
             else:
                 print(f"No GPBuilder available for source GP {i}, using fallback.")
@@ -238,7 +235,6 @@ class MHGPModel(Model):
 
             # Create target GP using BayBE configuration if builder available
             if self.gp_builder is not None:
-                print("Using GPBuilder for target GP.")
                 self.target_gp = self.gp_builder.create_gp(X_target_clean, residuals)
             else:
                 print("No GPBuilder available, using fallback.")
