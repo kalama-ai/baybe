@@ -20,9 +20,9 @@ from benchmarks.domains.transfer_learning.quadratic.base import load_data
 # Define the benchmark settings
 benchmark_config = TransferLearningRegressionBenchmarkSettings(
     random_seed=42,
-    n_mc_iterations=2,  # 30,
-    max_n_train_points=2,  # 5,
-    source_fractions=(0.01,),  # , 0.02, 0.05, 0.10],
+    n_mc_iterations=30,  # 2,  # 30,
+    max_n_train_points=5,  # 2,  # 5,
+    source_fractions=(0.01, 0.02, 0.05, 0.10),  # , 0.02, 0.05, 0.10],
     noise_std=0.0,  # Noise is already added in data generation
 )
 

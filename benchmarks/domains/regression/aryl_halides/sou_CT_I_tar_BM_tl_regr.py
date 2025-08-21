@@ -90,9 +90,9 @@ def aryl_halide_CT_I_BM_tl_regr(
 
 # Define the benchmark settings
 benchmark_config = TransferLearningRegressionBenchmarkSettings(
-    n_mc_iterations=2,  # 30,
-    max_n_train_points=2,  # 10,
-    source_fractions=(0.01, 0.05),  # , 0.1),
+    n_mc_iterations=30,  # 2,  # 30,
+    max_n_train_points=10,  # 2,  # 10,
+    source_fractions=(0.01, 0.05, 0.1),  # , 0.1),
     noise_std=0.0,  # Not used for real data
 )
 
