@@ -15,8 +15,19 @@ from baybe.parameters import (
     TaskParameter,
 )
 from baybe.parameters.base import DiscreteParameter
+from baybe.recommenders import (
+    BotorchRecommender,
+    RandomRecommender,
+    TwoPhaseMetaRecommender,
+)
 from baybe.searchspace import SearchSpace
 from baybe.simulation import simulate_scenarios
+from baybe.surrogates import GaussianProcessSurrogate
+from baybe.surrogates.source_prior import SourcePriorGaussianProcessSurrogate
+from baybe.surrogates.transfergpbo import (
+    MHGPGaussianProcessSurrogate,
+    SHGPGaussianProcessSurrogate,
+)
 from baybe.targets import NumericalTarget
 from baybe.utils.random import temporary_seed
 from benchmarks.data.utils import DATA_PATH
@@ -24,6 +35,10 @@ from benchmarks.definition import (
     ConvergenceBenchmarkSettings,
 )
 from benchmarks.definition.convergence import ConvergenceBenchmark
+
+TARGET = "105"
+# TODO: Currently SourcePrior GP only supports one source.
+SOURCES = ["90"]  # , "120"]
 
 
 def load_data() -> pd.DataFrame:
@@ -59,8 +74,8 @@ def make_searchspace(
         params.append(
             TaskParameter(
                 name="Temp_C",
-                values=["90", "105", "120"],
-                active_values=["105"],
+                values=SOURCES + [TARGET],
+                active_values=[TARGET],
             )
         )
     return SearchSpace.from_product(parameters=params)
@@ -79,12 +94,12 @@ def make_lookup(data: pd.DataFrame) -> pd.DataFrame:
     configuration. Since this might yield issues for the non-transfer learning
     campaigns, we filter the data to only include the target tasks.
     """
-    return data[data["Temp_C"] == "105"]
+    return data[data["Temp_C"] == TARGET]
 
 
 def make_initial_data(data: pd.DataFrame) -> pd.DataFrame:
     """Create the initial data for the benchmark."""
-    return data[data["Temp_C"] != "105"]
+    return data[data["Temp_C"].isin(SOURCES)]
 
 
 def direct_arylation_tl_temperature(
@@ -130,7 +145,44 @@ def direct_arylation_tl_temperature(
     initial_data = make_initial_data(data)
     objective = make_objective()
 
-    tl_campaign = Campaign(searchspace=searchspace, objective=objective)
+    index_kernel_campaign = Campaign(
+        searchspace=searchspace,
+        objective=objective,
+        recommender=TwoPhaseMetaRecommender(
+            initial_recommender=RandomRecommender(),
+            recommender=BotorchRecommender(surrogate_model=GaussianProcessSurrogate()),
+        ),
+    )
+    source_prior_campaign = Campaign(
+        searchspace=searchspace,
+        objective=objective,
+        recommender=TwoPhaseMetaRecommender(
+            initial_recommender=RandomRecommender(),
+            recommender=BotorchRecommender(
+                surrogate_model=SourcePriorGaussianProcessSurrogate()
+            ),
+        ),
+    )
+    mhgp_campaign = Campaign(
+        searchspace=searchspace,
+        objective=objective,
+        recommender=TwoPhaseMetaRecommender(
+            initial_recommender=RandomRecommender(),
+            recommender=BotorchRecommender(
+                surrogate_model=MHGPGaussianProcessSurrogate()
+            ),
+        ),
+    )
+    shgp_campaign = Campaign(
+        searchspace=searchspace,
+        objective=objective,
+        recommender=TwoPhaseMetaRecommender(
+            initial_recommender=RandomRecommender(),
+            recommender=BotorchRecommender(
+                surrogate_model=SHGPGaussianProcessSurrogate()
+            ),
+        ),
+    )
     non_tl_campaign = Campaign(searchspace=searchspace_nontl, objective=objective)
 
     percentages = [0.01, 0.1, 0.2]
@@ -147,7 +199,10 @@ def direct_arylation_tl_temperature(
         results.append(
             simulate_scenarios(
                 {
-                    f"{int(100 * p)}": tl_campaign,
+                    f"{int(100 * p)}_index_kernel": index_kernel_campaign,
+                    f"{int(100 * p)}_source_prior": source_prior_campaign,
+                    f"{int(100 * p)}_mhgp": mhgp_campaign,
+                    f"{int(100 * p)}_shgp": shgp_campaign,
                     f"{int(100 * p)}_naive": non_tl_campaign,
                 },
                 lookup,
@@ -160,7 +215,7 @@ def direct_arylation_tl_temperature(
         )
     results.append(
         simulate_scenarios(
-            {"0": tl_campaign, "0_naive": non_tl_campaign},
+            {"0": index_kernel_campaign, "0_naive": non_tl_campaign},
             lookup,
             batch_size=settings.batch_size,
             n_doe_iterations=settings.n_doe_iterations,
