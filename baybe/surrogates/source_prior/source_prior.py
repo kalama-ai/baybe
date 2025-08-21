@@ -20,6 +20,8 @@ from copy import deepcopy
 import gpytorch
 import torch
 from botorch.models import SingleTaskGP
+from botorch.posteriors import GPyTorchPosterior
+from gpytorch.distributions import MultivariateNormal
 
 from baybe.searchspace import SearchSpace
 from baybe.surrogates import GaussianProcessSurrogate
@@ -62,8 +64,6 @@ class GPBuilder:
         searchspace,  #: "SearchSpace",
         kernel_factory,  #: "Kernel"
     ) -> None:
-        from baybe.surrogates.gaussian_process.core import _ModelContext
-
         self.searchspace = searchspace
         self.kernel_factory = kernel_factory
         self._context = _ModelContext(searchspace)
@@ -91,10 +91,6 @@ class GPBuilder:
         """
         import botorch
         import gpytorch
-
-        from baybe.surrogates.gaussian_process.presets.default import (
-            _default_noise_factory,
-        )
 
         numerical_idxs = self._context.get_numerical_indices(train_x.shape[-1])
 
@@ -255,6 +251,53 @@ class GPyTKernel(gpytorch.kernels.Kernel):
             with gpytorch.settings.detach_test_caches(False):
                 k = self.base_kernel.forward(x1, x2, **params).detach()
         return k
+
+
+class SourcePriorWrapperModel(Model):
+    """BoTorch Model wrapper for SourcePriorGaussianProcessSurrogate.
+
+    This wrapper provides a BoTorch-compatible interface for the SourcePrior model,
+    allowing it to be used with BayBE's acquisition functions that expect to evaluate
+    posteriors over all training data (both source and target).
+    """
+
+    def __init__(self, source_prior_surrogate: "SourcePriorGaussianProcessSurrogate"):
+        super().__init__()
+        self.surrogate = source_prior_surrogate
+
+    @property
+    def num_outputs(self) -> int:
+        """Number of outputs of the model."""
+        return 1
+
+    def posterior(self, X: Tensor, **kwargs) -> Posterior:
+        """Compute posterior distribution.
+
+        This delegates to the SourcePriorGaussianProcessSurrogate's _posterior method,
+        which can handle mixed source/target data.
+
+        Args:
+            X: Input tensor with shape (..., n_points, n_features + 1)
+               where the last feature is the task index.
+
+        Returns:
+            Posterior distribution over the input points.
+        """
+        return self.surrogate._posterior(X)
+
+    @property
+    def train_inputs(self) -> tuple[Tensor, ...]:
+        """Return training inputs from the target GP."""
+        if self.surrogate._target_gp is None:
+            raise RuntimeError("Model not fitted")
+        return self.surrogate._target_gp.train_inputs
+
+    @property
+    def train_targets(self) -> Tensor:
+        """Return training targets from the target GP."""
+        if self.surrogate._target_gp is None:
+            raise RuntimeError("Model not fitted")
+        return self.surrogate._target_gp.train_targets
 
 
 @define
@@ -579,6 +622,13 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
         source_data, (X_target, Y_target) = self._extract_task_data(
             train_x, train_y, self._task_column_idx, self._target_task_id
         )
+
+        if len(source_data) == 0:
+            raise ValueError(
+                "No source data found. SourcePriorGaussianProcessSurrogate requires "
+                "at least source data for transfer learning."
+            )
+
         source_data = source_data[0]
         X_source, Y_source = source_data
 
@@ -595,10 +645,20 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
             train_x=X_source, train_y=Y_source, prior=None
         )
 
-        # Fit target model using source posterior as prior
-        self._target_gp = gp_builder.create_gp(
-            train_x=X_target, train_y=Y_target, prior=self._source_gp
-        )
+        # Handle target data
+        if X_target.shape[0] == 0:
+            # No target data available - use a copy of source GP as target GP
+            print(
+                "No target data provided for SourcePrior model. Using copy of source GP as target GP."
+            )
+            from copy import deepcopy
+
+            self._target_gp = deepcopy(self._source_gp)
+        else:
+            # Target data available - fit target model using source posterior as prior
+            self._target_gp = gp_builder.create_gp(
+                train_x=X_target, train_y=Y_target, prior=self._source_gp
+            )
 
     @override
     def _posterior(self, candidates_comp_scaled: Tensor, /) -> Posterior:
@@ -623,17 +683,121 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
                 "Model must be fitted before making predictions. Call fit() first."
             )
 
-        source_data, (X_target, Y_target) = self._extract_task_data(
-            X=candidates_comp_scaled,
-            Y=None,
-            task_feature=self._task_column_idx,
-            target_task=self._target_task_id,
+        # Handle non-batched inputs by adding a batch dimension
+        if candidates_comp_scaled.dim() == 2:
+            candidates_comp_scaled = candidates_comp_scaled.unsqueeze(0)
+            unbatch_output = True
+        else:
+            unbatch_output = False
+
+        # Save original shape for reshaping outputs later
+        batch_shape = candidates_comp_scaled.shape[
+            :-2
+        ]  # Everything except the last two dimensions
+        n_points = candidates_comp_scaled.shape[-2]  # Number of points
+
+        # Get dtype from the target GP to ensure consistency
+        gp_dtype = next(self._target_gp.parameters()).dtype
+        device = candidates_comp_scaled.device
+
+        # Process each batch element separately
+        batch_means = []
+        batch_covs = []
+
+        # Iterate over batch elements
+        for batch_idx in range(batch_shape.numel()):
+            # Get flat batch index
+            batch_indices = []
+            remaining = batch_idx
+            for dim_size in reversed(batch_shape):
+                batch_indices.insert(0, remaining % dim_size)
+                remaining = remaining // dim_size
+
+            # Extract data for this batch
+            if batch_shape.numel() == 1:
+                # Single batch dimension
+                candidates_batch = candidates_comp_scaled[batch_idx]
+            else:
+                # Multiple batch dimensions
+                candidates_batch = candidates_comp_scaled[tuple(batch_indices)]
+
+            # Initialize output tensors for this batch
+            batch_mean = torch.zeros(n_points, 1, dtype=gp_dtype, device=device)
+            batch_cov = torch.eye(n_points, dtype=gp_dtype, device=device) * 1e-6
+
+            # Extract task indices from candidates
+            task_indices = candidates_batch[:, self._task_column_idx].long()
+            target_mask = task_indices == self._target_task_id
+            source_mask = ~target_mask
+
+            # Extract source and target candidate points
+            source_data, (X_target, Y_target) = self._extract_task_data(
+                X=candidates_batch,
+                Y=None,
+                task_feature=self._task_column_idx,
+                target_task=self._target_task_id,
+            )
+
+            # Handle target predictions if we have target candidates
+            if target_mask.any():
+                target_posterior = self._target_gp.posterior(X_target)
+                target_mean = target_posterior.mean
+                target_var = target_posterior.variance
+
+                # Fill in target predictions
+                batch_mean[target_mask] = target_mean
+
+                # Fill target covariance (diagonal approximation for simplicity)
+                target_indices = torch.where(target_mask)[0]
+                for i, idx in enumerate(target_indices):
+                    batch_cov[idx, idx] = target_var[i]
+
+            # Handle source predictions if we have source candidates
+            if source_mask.any() and len(source_data) > 0:
+                X_source, Y_source = source_data[0]
+
+                # Use source GP for source predictions
+                source_posterior = self._source_gp.posterior(X_source)
+                source_mean = source_posterior.mean
+                source_var = source_posterior.variance
+
+                # Fill in source predictions
+                batch_mean[source_mask] = source_mean
+
+                # Fill source covariance (diagonal approximation for simplicity)
+                source_indices = torch.where(source_mask)[0]
+                for i, idx in enumerate(source_indices):
+                    batch_cov[idx, idx] = source_var[i]
+
+            batch_means.append(batch_mean)
+            batch_covs.append(batch_cov)
+
+        # Stack results along batch dimension
+        if batch_shape.numel() == 1:
+            # Single batch dimension
+            stacked_means = torch.stack(batch_means, dim=0)
+            stacked_covs = torch.stack(batch_covs, dim=0)
+        else:
+            # Multiple batch dimensions - reshape to original batch shape
+            stacked_means = torch.stack(batch_means, dim=0).reshape(
+                *batch_shape, n_points, 1
+            )
+            stacked_covs = torch.stack(batch_covs, dim=0).reshape(
+                *batch_shape, n_points, n_points
+            )
+
+        # Remove extra batch dimension if input wasn't batched
+        if unbatch_output:
+            stacked_means = stacked_means.squeeze(0)
+            stacked_covs = stacked_covs.squeeze(0)
+
+        # Create the MultivariateNormal distribution
+        mvn = MultivariateNormal(
+            stacked_means.squeeze(-1),  # Remove last dimension: (..., n, 1) -> (..., n)
+            stacked_covs,
         )
+        posterior = GPyTorchPosterior(mvn)
 
-        if len(source_data) > 0:
-            raise NotImplementedError("Can only make predictions on target task.")
-
-        posterior = self._target_gp.posterior(X_target)
         return posterior
 
     @override
@@ -641,7 +805,7 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
         """Return the BoTorch model representation.
 
         Returns:
-            The fitted target GP model.
+            A wrapper model that can handle both source and target predictions.
 
         Raises:
             ModelNotTrainedError: If model hasn't been trained yet.
@@ -650,4 +814,4 @@ class SourcePriorGaussianProcessSurrogate(GaussianProcessSurrogate):
             raise ModelNotTrainedError(
                 "Model must be fitted before accessing BoTorch model."
             )
-        return self._target_gp
+        return SourcePriorWrapperModel(self)
