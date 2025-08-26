@@ -199,11 +199,11 @@ def direct_arylation_tl_temperature(
         results.append(
             simulate_scenarios(
                 {
-                    f"{int(100 * p)}_index_kernel": index_kernel_campaign,
-                    f"{int(100 * p)}_source_prior": source_prior_campaign,
-                    f"{int(100 * p)}_mhgp": mhgp_campaign,
-                    f"{int(100 * p)}_shgp": shgp_campaign,
-                    f"{int(100 * p)}_naive": non_tl_campaign,
+                    f"{int(100 * p)}_index_kernel": index_kernel_campaign, # Source Fraction p, Model GP Index Kernel
+                    f"{int(100 * p)}_source_prior": source_prior_campaign, # Source Fraction p, Model Source Prior
+                    f"{int(100 * p)}_mhgp": mhgp_campaign, # Source Fraction p, Model MHGP
+                    f"{int(100 * p)}_shgp": shgp_campaign, # Source Fraction p, Model SHGP
+                    f"{int(100 * p)}_naive": non_tl_campaign, # Source Fraction p, Model vanilla GP
                 },
                 lookup,
                 initial_data=initial_data_samples[p],
@@ -215,7 +215,8 @@ def direct_arylation_tl_temperature(
         )
     results.append(
         simulate_scenarios(
-            {"0": index_kernel_campaign, "0_naive": non_tl_campaign},
+            {"0": index_kernel_campaign, # Source Fraction 0, model GP Index Kernel - full searchspace
+             "0_naive": non_tl_campaign}, # Source Fraction 0, Model vanilla GP - search space without TaskParameter
             lookup,
             batch_size=settings.batch_size,
             n_doe_iterations=settings.n_doe_iterations,

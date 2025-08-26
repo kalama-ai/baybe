@@ -23,12 +23,16 @@ Examples:
   python -m benchmarks.visualize --type regression file.json
   python -m benchmarks.visualize --type regression --file-names file1.json file2.json
   python -m benchmarks.visualize --type convergence --file-names *.json
+  python -m benchmarks.visualize --type tl_convergence_per_source --file-names *_result.json
+  python -m benchmarks.visualize --type tl_convergence_per_model --file-names *_result.json
+  python -m benchmarks.visualize --type tl_regression_per_source --file-names *_result.json
+  python -m benchmarks.visualize --type tl_regression_per_model --file-names *_result.json
         """,
     )
 
     parser.add_argument(
         "--type",
-        choices=["regression", "convergence"],
+        choices=["regression", "convergence", "tl_convergence_per_source", "tl_convergence_per_model", "tl_regression_per_source", "tl_regression_per_model"],
         required=True,
         help="Type of benchmark visualization to generate",
     )
@@ -116,6 +120,162 @@ Examples:
                 output_path = visualize_convergence_benchmark(file_path)
                 print(
                     f"Successfully created convergencevisualization for '{file_path}'!"
+                )
+                print(f"Output saved as: {output_path}")
+                successful_files.append(file_path)
+            except Exception as e:
+                print(f"Error creating visualization for '{file_path}': {e}")
+                failed_files.append(file_path)
+
+        # Summary
+        print("\nSummary:")
+        print(f"  Successfully processed: {len(successful_files)} files")
+        print(f"  Failed: {len(failed_files)} files")
+
+        if failed_files:
+            print(f"  Failed files: {', '.join(failed_files)}")
+            sys.exit(1)
+
+    elif args.type == "tl_convergence_per_source":
+        from benchmarks.visualization.visualize_tl_convergence_benchmark_per_source import (
+            visualize_tl_convergence_per_source,
+        )
+
+        successful_files = []
+        failed_files = []
+
+        for file_path in file_paths:
+            if not Path(file_path).exists():
+                print(f"Error: File '{file_path}' does not exist.")
+                failed_files.append(file_path)
+                continue
+
+            if not file_path.endswith(".json"):
+                print(f"Error: File '{file_path}' is not a JSON file.")
+                failed_files.append(file_path)
+                continue
+
+            try:
+                output_path = visualize_tl_convergence_per_source(file_path)
+                print(
+                    f"Successfully created TL convergence per source visualization for '{file_path}'!"
+                )
+                print(f"Output saved as: {output_path}")
+                successful_files.append(file_path)
+            except Exception as e:
+                print(f"Error creating visualization for '{file_path}': {e}")
+                failed_files.append(file_path)
+
+        # Summary
+        print("\nSummary:")
+        print(f"  Successfully processed: {len(successful_files)} files")
+        print(f"  Failed: {len(failed_files)} files")
+
+        if failed_files:
+            print(f"  Failed files: {', '.join(failed_files)}")
+            sys.exit(1)
+
+    elif args.type == "tl_convergence_per_model":
+        from benchmarks.visualization.visualize_tl_convergence_benchmark_per_model import (
+            visualize_tl_convergence_per_model,
+        )
+
+        successful_files = []
+        failed_files = []
+
+        for file_path in file_paths:
+            if not Path(file_path).exists():
+                print(f"Error: File '{file_path}' does not exist.")
+                failed_files.append(file_path)
+                continue
+
+            if not file_path.endswith(".json"):
+                print(f"Error: File '{file_path}' is not a JSON file.")
+                failed_files.append(file_path)
+                continue
+
+            try:
+                output_path = visualize_tl_convergence_per_model(file_path)
+                print(
+                    f"Successfully created TL convergence per model visualization for '{file_path}'!"
+                )
+                print(f"Output saved as: {output_path}")
+                successful_files.append(file_path)
+            except Exception as e:
+                print(f"Error creating visualization for '{file_path}': {e}")
+                failed_files.append(file_path)
+
+        # Summary
+        print("\nSummary:")
+        print(f"  Successfully processed: {len(successful_files)} files")
+        print(f"  Failed: {len(failed_files)} files")
+
+        if failed_files:
+            print(f"  Failed files: {', '.join(failed_files)}")
+            sys.exit(1)
+
+    elif args.type == "tl_regression_per_source":
+        from benchmarks.visualization.visualize_tl_regression_benchmark_per_source import (
+            visualize_tl_regression_per_source,
+        )
+
+        successful_files = []
+        failed_files = []
+
+        for file_path in file_paths:
+            if not Path(file_path).exists():
+                print(f"Error: File '{file_path}' does not exist.")
+                failed_files.append(file_path)
+                continue
+
+            if not file_path.endswith(".json"):
+                print(f"Error: File '{file_path}' is not a JSON file.")
+                failed_files.append(file_path)
+                continue
+
+            try:
+                output_path = visualize_tl_regression_per_source(file_path)
+                print(
+                    f"Successfully created TL regression per source visualization for '{file_path}'!"
+                )
+                print(f"Output saved as: {output_path}")
+                successful_files.append(file_path)
+            except Exception as e:
+                print(f"Error creating visualization for '{file_path}': {e}")
+                failed_files.append(file_path)
+
+        # Summary
+        print("\nSummary:")
+        print(f"  Successfully processed: {len(successful_files)} files")
+        print(f"  Failed: {len(failed_files)} files")
+
+        if failed_files:
+            print(f"  Failed files: {', '.join(failed_files)}")
+            sys.exit(1)
+
+    elif args.type == "tl_regression_per_model":
+        from benchmarks.visualization.visualize_tl_regression_benchmark_per_model import (
+            visualize_tl_regression_per_model,
+        )
+
+        successful_files = []
+        failed_files = []
+
+        for file_path in file_paths:
+            if not Path(file_path).exists():
+                print(f"Error: File '{file_path}' does not exist.")
+                failed_files.append(file_path)
+                continue
+
+            if not file_path.endswith(".json"):
+                print(f"Error: File '{file_path}' is not a JSON file.")
+                failed_files.append(file_path)
+                continue
+
+            try:
+                output_path = visualize_tl_regression_per_model(file_path)
+                print(
+                    f"Successfully created TL regression per model visualization for '{file_path}'!"
                 )
                 print(f"Output saved as: {output_path}")
                 successful_files.append(file_path)
