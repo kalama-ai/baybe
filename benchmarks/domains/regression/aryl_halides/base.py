@@ -9,12 +9,14 @@ import pandas as pd
 from baybe.objectives import SingleTargetObjective
 from baybe.searchspace import SearchSpace
 from baybe.targets import NumericalTarget
+from benchmarks.definition import TransferLearningRegressionBenchmarkSettings
 from benchmarks.domains.regression.base import run_tl_regression_benchmark
 from benchmarks.domains.transfer_learning.aryl_halides.base import (
     load_data,
+)
+from benchmarks.domains.transfer_learning.aryl_halides.base import (
     make_searchspace as _make_searchspace,
 )
-from benchmarks.definition import TransferLearningRegressionBenchmarkSettings
 
 
 def make_searchspace(
@@ -24,13 +26,13 @@ def make_searchspace(
     target_tasks: Sequence[str] | None = None,
 ) -> SearchSpace:
     """Create the search space for aryl halides regression benchmarks.
-    
+
     Args:
         data: The aryl halides dataset
         use_task_parameter: Whether to include task parameter (True for TL, False for vanilla)
         source_tasks: List of source task identifiers (for TL benchmarks)
         target_tasks: List of target task identifiers (for TL benchmarks)
-    
+
     Returns:
         SearchSpace for the benchmark
     """
@@ -46,7 +48,7 @@ def make_searchspace(
 
 def make_objective() -> SingleTargetObjective:
     """Create the objective for aryl halides benchmarks.
-    
+
     Returns:
         SingleTargetObjective for yield maximization
     """
@@ -59,24 +61,27 @@ def run_aryl_halide_tl_regression_benchmark(
     target_tasks: Sequence[str],
 ) -> pd.DataFrame:
     """Run aryl halides transfer learning regression benchmark.
-    
+
     Args:
         settings: The benchmark settings
         source_tasks: List of source task identifiers
         target_tasks: List of target task identifiers
-    
+
     Returns:
         DataFrame with benchmark results
     """
+
     # Create wrapper functions that match the expected signature for run_tl_regression_benchmark
-    def make_searchspace_wrapper(data: pd.DataFrame, use_task_parameter: bool) -> SearchSpace:
+    def make_searchspace_wrapper(
+        data: pd.DataFrame, use_task_parameter: bool
+    ) -> SearchSpace:
         return make_searchspace(
             data=data,
             use_task_parameter=use_task_parameter,
             source_tasks=source_tasks,
             target_tasks=target_tasks,
         )
-    
+
     return run_tl_regression_benchmark(
         settings=settings,
         load_data_fn=load_data,

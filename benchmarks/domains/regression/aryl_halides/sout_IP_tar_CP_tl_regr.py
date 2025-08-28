@@ -32,7 +32,7 @@ def aryl_halide_IP_CP_tl_regr(
     Key characteristics:
     • Parameters:
       - Base: Substance with MORDRED encoding
-      - Ligand: Substance with MORDRED encoding 
+      - Ligand: Substance with MORDRED encoding
       - Additive: Substance with MORDRED encoding
       - aryl_halide: Task parameter
     • Target: Reaction yield (continuous)

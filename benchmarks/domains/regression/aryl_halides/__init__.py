@@ -12,6 +12,6 @@ from benchmarks.domains.regression.aryl_halides.sout_IP_tar_CP_tl_regr import (
 
 __all__ = [
     "aryl_halide_CT_I_BM_tl_regr_benchmark",
-    "aryl_halide_CT_IM_tl_regr_benchmark", 
+    "aryl_halide_CT_IM_tl_regr_benchmark",
     "aryl_halide_IP_CP_tl_regr_benchmark",
 ]

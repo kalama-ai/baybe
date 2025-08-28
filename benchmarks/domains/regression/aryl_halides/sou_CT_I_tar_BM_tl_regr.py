@@ -35,7 +35,7 @@ def aryl_halide_CT_I_BM_tl_regr(
     Key characteristics:
     • Parameters:
       - Base: Substance with MORDRED encoding
-      - Ligand: Substance with MORDRED encoding 
+      - Ligand: Substance with MORDRED encoding
       - Additive: Substance with MORDRED encoding
       - aryl_halide: Task parameter
     • Target: Reaction yield (continuous)
@@ -50,7 +50,9 @@ def aryl_halide_CT_I_BM_tl_regr(
     """
     return run_aryl_halide_tl_regression_benchmark(
         settings=settings,
-        source_tasks=["1-chloro-4-(trifluoromethyl)benzene"],  # Single source for SourcePrior GP compatibility
+        source_tasks=[
+            "1-chloro-4-(trifluoromethyl)benzene"
+        ],  # Single source for SourcePrior GP compatibility
         target_tasks=["1-iodo-4-methoxybenzene"],
     )
 
