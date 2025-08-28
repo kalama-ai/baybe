@@ -4,10 +4,6 @@ from __future__ import annotations
 
 import pandas as pd
 
-from baybe.parameters import (
-    TaskParameter,
-)
-from baybe.searchspace import SearchSpace
 from benchmarks.definition import (
     TransferLearningRegressionBenchmark,
     TransferLearningRegressionBenchmarkSettings,
@@ -18,28 +14,6 @@ from benchmarks.domains.transfer_learning.direct_arylation.temperature_tl import
     make_objective,
     make_searchspace,
 )
-
-
-def create_searchspaces(
-    data: pd.DataFrame,
-) -> tuple[SearchSpace, SearchSpace, str, list[str], str]:
-    """Create search spaces for vanilla GP and transfer learning models."""
-    # Create SearchSpace without task parameter (vanilla GP)
-    vanilla_searchspace = make_searchspace(data=data, use_task_parameter=False)
-
-    # Create transfer learning search space (with task parameter)
-    tl_searchspace = make_searchspace(data=data, use_task_parameter=True)
-
-    # Extract task parameter details
-    task_param = next(
-        p for p in tl_searchspace.parameters if isinstance(p, TaskParameter)
-    )
-    name_task = task_param.name
-    target_task = task_param.active_values[0]  # Extract single target task
-    all_values = task_param.values
-    source_tasks = [val for val in all_values if val != target_task]
-
-    return vanilla_searchspace, tl_searchspace, name_task, source_tasks, target_task
 
 
 def direct_arylation_temperature_tl_regr(
@@ -63,7 +37,7 @@ def direct_arylation_temperature_tl_regr(
     results_df = run_tl_regression_benchmark(
         settings=settings,
         load_data_fn=load_data,
-        create_searchspaces_fn=create_searchspaces,
+        make_searchspace_fn=make_searchspace,
         create_objective_fn=make_objective,
     )
     return results_df
@@ -71,10 +45,10 @@ def direct_arylation_temperature_tl_regr(
 
 # Define the benchmark settings
 benchmark_config = TransferLearningRegressionBenchmarkSettings(
-    n_mc_iterations=30,  # 30,  # 5,
-    max_n_train_points=10,  # 10,  # 10,
-    source_fractions=(0.01, 0.05, 0.1, 0.2),  # , 0.05, 0.1, 0.2],  # 0.5, 0.7, 0.9],
-    noise_std=0.0,  # Not used for real data
+    n_mc_iterations=30,
+    max_n_train_points=10,
+    source_fractions=(0.01, 0.05, 0.1, 0.2),
+    noise_std=0.0,
 )
 
 # Create the benchmark
