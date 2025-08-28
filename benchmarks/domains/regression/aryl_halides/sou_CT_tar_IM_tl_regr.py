@@ -1,8 +1,6 @@
 """TL regression benchmark for aryl halide reactions.
 
-Source task:
-    - 1-chloro-4-(trifluoromethyl)benzene
-    # - 2-iodopyridine  # Commented out for SourcePrior GP compatibility (single source only)
+Source task: 1-chloro-4-(trifluoromethyl)benzene
 Target task: 1-iodo-4-methoxybenzene
 """
 
@@ -19,14 +17,13 @@ from benchmarks.domains.regression.aryl_halides.base import (
 )
 
 
-def aryl_halide_CT_I_BM_tl_regr(
+def aryl_halide_CT_IM_tl_regr(
     settings: TransferLearningRegressionBenchmarkSettings,
 ) -> pd.DataFrame:
     """Benchmark function for comparing regression performance of GP vs TL models.
 
     This benchmark uses different aryl halide substrates as tasks:
     - Source task: 1-chloro-4-(trifluoromethyl)benzene
-    # - Source task: 2-iodopyridine (commented out for SourcePrior GP compatibility)
     - Target task: 1-iodo-4-methoxybenzene
 
     It trains models with varying amounts of source and target data, and evaluates
@@ -50,7 +47,7 @@ def aryl_halide_CT_I_BM_tl_regr(
     """
     return run_aryl_halide_tl_regression_benchmark(
         settings=settings,
-        source_tasks=["1-chloro-4-(trifluoromethyl)benzene"],  # Single source for SourcePrior GP compatibility
+        source_tasks=["1-chloro-4-(trifluoromethyl)benzene"],
         target_tasks=["1-iodo-4-methoxybenzene"],
     )
 
@@ -64,6 +61,6 @@ benchmark_config = TransferLearningRegressionBenchmarkSettings(
 )
 
 # Create the benchmark
-aryl_halide_CT_I_BM_tl_regr_benchmark = TransferLearningRegressionBenchmark(
-    function=aryl_halide_CT_I_BM_tl_regr, settings=benchmark_config
+aryl_halide_CT_IM_tl_regr_benchmark = TransferLearningRegressionBenchmark(
+    function=aryl_halide_CT_IM_tl_regr, settings=benchmark_config
 )
