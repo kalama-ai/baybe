@@ -1,7 +1,7 @@
 """Quadratic transfer learning benchmark with different minima and many sources.
 
 This benchmark tests transfer learning on quadratic functions where source and target
-tasks have different minimum locations (b varies), using 10 source tasks.
+tasks have different minimum locations (b varies), using 1 source task.
 """
 
 from __future__ import annotations
@@ -28,8 +28,9 @@ def quadratic_diff_min_many_sources_tl(
     • Uses quadratic functions: y = a*(x+b)^2 + c
     • Configuration:
       - keep_min=False: Functions have different b values (different minimum locations)
-      - n_sources=10: Uses 10 source tasks
-    • Source tasks: 10 randomly generated quadratic functions with varying b ∈ [-1, 1]
+      - n_sources=1: Uses 1 source task (reduced for SourcePrior GP compatibility)
+    • Source tasks: 1 randomly generated quadratic function with varying b ∈ [-1, 1]
+    # Note: Originally used 10 sources, reduced to 1 for SourcePrior GP compatibility
     • Target task: 1 randomly generated quadratic function with varying b ∈ [-1, 1]
     • Tests varying amounts of source data:
       - 1% of source data
@@ -41,8 +42,8 @@ def quadratic_diff_min_many_sources_tl(
     • Objective: Minimize quadratic function value
     • Optimal value: Theoretical minimum c value of target function
 
-    This benchmark tests whether having more source tasks with different minimum
-    locations improves transfer learning performance compared to fewer source tasks.
+    This benchmark originally tested whether having many source tasks with different minimum
+    locations improves transfer learning performance. Now reduced to 1 source for SourcePrior GP compatibility.
 
     Args:
         settings: Configuration settings for the convergence benchmark
@@ -53,7 +54,7 @@ def quadratic_diff_min_many_sources_tl(
     # Generate data to extract source task names
     from benchmarks.domains.transfer_learning.quadratic.base import load_data
 
-    data = load_data(n_sources=10, keep_min=False)
+    data = load_data(n_sources=1, keep_min=False)  # n_sources=10, reduced to 1 for SourcePrior GP compatibility
     all_tasks = data["task"].unique()
     target_tasks = ["target"]
     source_tasks = [task for task in all_tasks if task != "target"]
@@ -63,7 +64,7 @@ def quadratic_diff_min_many_sources_tl(
         source_tasks=source_tasks,
         target_tasks=target_tasks,
         percentages=[0.01, 0.02, 0.03, 0.05, 0.10, 0.20],
-        n_sources=10,
+        n_sources=1,  # n_sources=10, reduced to 1 for SourcePrior GP compatibility
         keep_min=False,
     )
 

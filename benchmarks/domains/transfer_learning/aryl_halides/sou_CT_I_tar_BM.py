@@ -2,7 +2,7 @@
 
 Source tasks:
     - 1-chloro-4-(trifluoromethyl)benzene
-    - 2-iodopyridine
+    # - 2-iodopyridine  # Commented out for SourcePrior GP compatibility (single source only)
 Target task: 1-bromo-4-methoxybenzene
 """
 
@@ -28,7 +28,7 @@ def aryl_halide_CT_I_BM_tl(
     • Compares transfer learning vs. non-transfer learning approaches
     • Source tasks:
       - 1-chloro-4-(trifluoromethyl)benzene
-      - 2-iodopyridine
+      # - 2-iodopyridine  # Commented out for SourcePrior GP compatibility (single source only)
     • Target task: 1-iodo-4-methoxybenzene
     • Tests varying amounts of source data:
       - 1% of source data
@@ -49,7 +49,7 @@ def aryl_halide_CT_I_BM_tl(
     """
     return aryl_halide_tl_substance_benchmark(
         settings=settings,
-        source_tasks=["1-chloro-4-(trifluoromethyl)benzene", "2-iodopyridine"],
+        source_tasks=["1-chloro-4-(trifluoromethyl)benzene"],  # , "2-iodopyridine"],  # Single source for SourcePrior GP compatibility
         target_tasks=["1-iodo-4-methoxybenzene"],
         percentages=[0.01, 0.05, 0.1],
     )

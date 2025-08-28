@@ -11,8 +11,19 @@ from baybe.campaign import Campaign
 from baybe.objectives import SingleTargetObjective
 from baybe.parameters import NumericalDiscreteParameter, TaskParameter
 from baybe.parameters.base import DiscreteParameter
+from baybe.recommenders import (
+    BotorchRecommender,
+    RandomRecommender,
+    TwoPhaseMetaRecommender,
+)
 from baybe.searchspace import SearchSpace
 from baybe.simulation import simulate_scenarios
+from baybe.surrogates import GaussianProcessSurrogate
+from baybe.surrogates.source_prior import SourcePriorGaussianProcessSurrogate
+from baybe.surrogates.transfergpbo import (
+    MHGPGaussianProcessSurrogate,
+    SHGPGaussianProcessSurrogate,
+)
 from baybe.targets import NumericalTarget
 from baybe.utils.random import temporary_seed
 from benchmarks.definition import (
@@ -97,9 +108,44 @@ def easom_tl_47_negate_noise5(settings: ConvergenceBenchmarkSettings) -> pd.Data
     objective = SingleTargetObjective(
         target=NumericalTarget(name="Target", mode="MAX" if negate else "MIN")
     )
-    tl_campaign = Campaign(
+    
+    index_kernel_campaign = Campaign(
         searchspace=searchspace_tl,
         objective=objective,
+        recommender=TwoPhaseMetaRecommender(
+            initial_recommender=RandomRecommender(),
+            recommender=BotorchRecommender(surrogate_model=GaussianProcessSurrogate()),
+        ),
+    )
+    source_prior_campaign = Campaign(
+        searchspace=searchspace_tl,
+        objective=objective,
+        recommender=TwoPhaseMetaRecommender(
+            initial_recommender=RandomRecommender(),
+            recommender=BotorchRecommender(
+                surrogate_model=SourcePriorGaussianProcessSurrogate()
+            ),
+        ),
+    )
+    mhgp_campaign = Campaign(
+        searchspace=searchspace_tl,
+        objective=objective,
+        recommender=TwoPhaseMetaRecommender(
+            initial_recommender=RandomRecommender(),
+            recommender=BotorchRecommender(
+                surrogate_model=MHGPGaussianProcessSurrogate()
+            ),
+        ),
+    )
+    shgp_campaign = Campaign(
+        searchspace=searchspace_tl,
+        objective=objective,
+        recommender=TwoPhaseMetaRecommender(
+            initial_recommender=RandomRecommender(),
+            recommender=BotorchRecommender(
+                surrogate_model=SHGPGaussianProcessSurrogate()
+            ),
+        ),
     )
     nontl_campaign = Campaign(
         searchspace=searchspace_nontl,
@@ -136,7 +182,10 @@ def easom_tl_47_negate_noise5(settings: ConvergenceBenchmarkSettings) -> pd.Data
         results.append(
             simulate_scenarios(
                 {
-                    f"{int(100 * p)}": tl_campaign,
+                    f"{int(100 * p)}_index_kernel": index_kernel_campaign,
+                    f"{int(100 * p)}_source_prior": source_prior_campaign,
+                    f"{int(100 * p)}_mhgp": mhgp_campaign,
+                    f"{int(100 * p)}_shgp": shgp_campaign,
                     f"{int(100 * p)}_naive": nontl_campaign,
                 },
                 lookup,
@@ -149,7 +198,7 @@ def easom_tl_47_negate_noise5(settings: ConvergenceBenchmarkSettings) -> pd.Data
         )
     results.append(
         simulate_scenarios(
-            {"0": tl_campaign, "0_naive": nontl_campaign},
+            {"0": index_kernel_campaign, "0_naive": nontl_campaign},
             lookup,
             batch_size=settings.batch_size,
             n_doe_iterations=settings.n_doe_iterations,

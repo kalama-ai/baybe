@@ -1,7 +1,7 @@
 """Quadratic transfer learning benchmark with same minimum and few sources.
 
 This benchmark tests transfer learning on quadratic functions where all source and
-target tasks have their minimum at the same location (b=0), using only 3 source tasks.
+target tasks have their minimum at the same location (b=0), using only 1 source task.
 """
 
 from __future__ import annotations
@@ -28,8 +28,9 @@ def quadratic_same_min_few_sources_tl(
     • Uses quadratic functions: y = a*(x+b)^2 + c
     • Configuration:
       - keep_min=True: All functions have b=0 (same minimum location at x=0)
-      - n_sources=3: Uses 3 source tasks
-    • Source tasks: 3 randomly generated quadratic functions with b=0
+      - n_sources=1: Uses 1 source task (reduced for SourcePrior GP compatibility)
+    • Source tasks: 1 randomly generated quadratic function with b=0
+    # Note: Originally used 3 sources, reduced to 1 for SourcePrior GP compatibility
     • Target task: 1 randomly generated quadratic function with b=0
     • Tests varying amounts of source data:
       - 1% of source data
@@ -53,7 +54,7 @@ def quadratic_same_min_few_sources_tl(
     # Generate data to extract source task names
     from benchmarks.domains.transfer_learning.quadratic.base import load_data
 
-    data = load_data(n_sources=3, keep_min=True)
+    data = load_data(n_sources=1, keep_min=True)  # n_sources=3, reduced to 1 for SourcePrior GP compatibility
     all_tasks = data["task"].unique()
     target_tasks = ["target"]
     source_tasks = [task for task in all_tasks if task != "target"]
@@ -63,7 +64,7 @@ def quadratic_same_min_few_sources_tl(
         source_tasks=source_tasks,
         target_tasks=target_tasks,
         percentages=[0.01, 0.02, 0.03, 0.05, 0.10, 0.20],
-        n_sources=3,
+        n_sources=1,  # n_sources=3, reduced to 1 for SourcePrior GP compatibility
         keep_min=True,
     )
 
