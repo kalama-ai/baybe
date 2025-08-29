@@ -124,19 +124,35 @@ def visualize_tl_convergence_per_source(json_file_path):
         fontsize=14, fontweight="bold"
     )
 
-    # Define colors for different models
-    model_colors = {
-        "GPIndex": "#1f77b4",
-        "MHGP": "#ff7f0e", 
-        "SHGP": "#2ca02c",
-        "SourceGP": "#d62728",
-        "GP_reduced": "#9467bd"
-    }
+    # Define unified, extensible color scheme for TL models (matches regression scripts)
+    tl_model_palette = [
+        '#3498db',  # Bright blue
+        '#e74c3c',  # Bright red
+        '#2ecc71',  # Bright green
+        '#f39c12',  # Bright orange
+        '#9b59b6',  # Bright purple
+        '#34495e',  # Dark blue-gray
+        '#e67e22',  # Darker orange
+        '#1abc9c',  # Teal
+        '#8e44ad',  # Dark purple
+        '#2c3e50',  # Very dark blue
+        '#16a085',  # Dark teal
+        '#c0392b',  # Dark red
+        '#27ae60',  # Dark green
+        '#d35400',  # Dark orange
+        '#7f8c8d',  # Medium gray
+    ]
     
-    # Define line styles and colors for baselines (unique colors, not reused by TL models)
+    # Dynamically assign colors to detected TL models
+    model_colors = {}
+    for i, model_name in enumerate(sorted(all_models)):
+        color_idx = i % len(tl_model_palette)
+        model_colors[model_name] = tl_model_palette[color_idx]
+    
+    # Define baseline colors (matches regression scripts)
     baseline_styles = {
-        "GPIndex_0pct_full": {"color": "#8c564b", "linestyle": "--", "alpha": 0.8, "linewidth": 2},
-        "GP_0pct_reduced": {"color": "#e377c2", "linestyle": ":", "alpha": 0.8, "linewidth": 2}
+        "GPIndex_0pct_full": {"color": "#7f8c8d", "linestyle": "--", "alpha": 0.8, "linewidth": 2},
+        "GP_0pct_reduced": {"color": "#95a5a6", "linestyle": ":", "alpha": 0.8, "linewidth": 2}
     }
 
     def plot_scenarios_on_axes(ax_cum, ax_iter, scenarios_to_plot, title_text, add_legend=False):
@@ -245,17 +261,14 @@ def visualize_tl_convergence_per_source(json_file_path):
         ax_iter.grid(True, alpha=0.3)
         ax_iter.tick_params(labelsize=9)
         
-        # Add legend if requested
-        if add_legend:
-            ax_cum.legend(loc="best", fontsize=8)
-            ax_iter.legend(loc="best", fontsize=8)
+        # No individual legends - unified legend will be created later
 
     # First column: Baselines only
     ax_cum_baseline = axes[0, 0]
     ax_iter_baseline = axes[1, 0]
     plot_scenarios_on_axes(
         ax_cum_baseline, ax_iter_baseline, 
-        baselines, "Baselines", add_legend=True
+        baselines, "Baselines", add_legend=False
     )
 
     # Remaining columns: Each source percentage with baselines + TL models
@@ -375,24 +388,51 @@ def visualize_tl_convergence_per_source(json_file_path):
             ax_iter.grid(True, alpha=0.3)
             ax_iter.tick_params(labelsize=9)
             
-            # Add legend if requested
-            if add_legend:
-                ax_cum.legend(loc="best", fontsize=8)
-                ax_iter.legend(loc="best", fontsize=8)
+            # No individual legends - unified legend will be created later
         
         plot_with_source_pct(
             ax_cum, ax_iter, 
             scenarios_to_plot, f"{source_pct}% Source Data", 
-            add_legend=(col_idx == 1)  # Only add legend to first source column
+            add_legend=False
         )
+
+    # Create unified legend in the first subplot (top-left) in lower right corner
+    legend_elements = []
+    
+    # Add TL models (solid lines) - dynamically detected
+    model_name_mapping = {
+        'GPIndex': 'GPIndex',
+        'MHGP': 'MHGP', 
+        'SHGP': 'SHGP',
+        'SourceGP': 'SourcePrior',
+        'GP_reduced': 'GP (reduced)'
+    }
+    
+    for model_name in sorted(all_models):
+        if model_name in model_colors:
+            color = model_colors[model_name]
+            clean_name = model_name_mapping.get(model_name, model_name.replace('_', ' ').title())
+            legend_elements.append(plt.Line2D([0], [0], color=color, linestyle='-', 
+                                            linewidth=2, label=clean_name))
+    
+    # Add baseline models
+    legend_elements.append(plt.Line2D([0], [0], color="#95a5a6", linestyle=':', 
+                                    linewidth=2, label='0% (reduced)'))
+    legend_elements.append(plt.Line2D([0], [0], color="#7f8c8d", linestyle='--', 
+                                    linewidth=2, label='0% (full)'))
+    
+    # Add the legend to the first subplot (top-left) in lower right corner
+    first_ax = axes[0, 0]
+    first_ax.legend(handles=legend_elements, loc='lower right', fontsize=8, 
+                   frameon=True, fancybox=True, shadow=True)
 
     # Set row labels
     axes[0, 0].set_ylabel(f"{cum_best_col}", fontsize=10)
     axes[1, 0].set_ylabel(f"{iter_best_col}", fontsize=10)
 
-    # Adjust layout
+    # Adjust layout and fix title positioning
     plt.tight_layout()
-    plt.subplots_adjust(top=0.93, hspace=0.25, wspace=0.15)
+    plt.subplots_adjust(top=0.90, hspace=0.25, wspace=0.15)
 
     # Save the plot
     input_path = Path(json_file_path)

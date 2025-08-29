@@ -127,7 +127,7 @@ def visualize_tl_regression_per_model(json_file_path):
     # Create figure: n_model_types rows × n_metrics columns (switched from original)
     n_rows = len(ordered_model_types)
     n_cols = len(metrics)
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 3 * n_rows), sharey='row')
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 3 * n_rows))
     
     # Handle single row/column cases
     if n_rows == 1 and n_cols == 1:
@@ -154,9 +154,58 @@ def visualize_tl_regression_per_model(json_file_path):
         'SPEARMAN_RHO': 'spearman_rho_score'
     }
     
-    # Define colors for scenarios dynamically
-    color_palette = ["#8c564b", "#9467bd", "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#e377c2", "#bcbd22"]
-    scenario_colors = {scenario: color_palette[i % len(color_palette)] for i, scenario in enumerate(scenarios)}
+    # Define extensible color palettes
+    # Bright, distinct colors for source fractions (easily extensible)
+    source_fraction_palette = [
+        '#3498db',  # Bright blue
+        '#e74c3c',  # Bright red
+        '#2ecc71',  # Bright green
+        '#f39c12',  # Bright orange
+        '#9b59b6',  # Bright purple
+        '#34495e',  # Dark blue-gray
+        '#e67e22',  # Darker orange
+        '#1abc9c',  # Teal
+        '#8e44ad',  # Dark purple
+        '#2c3e50',  # Very dark blue
+        '#16a085',  # Dark teal
+        '#c0392b',  # Dark red
+        '#27ae60',  # Dark green
+        '#d35400',  # Dark orange
+        '#7f8c8d',  # Medium gray
+    ]
+    
+    # Baseline colors (fixed, muted grays)
+    baseline_color = '#95a5a6'        # Light gray for reduced searchspace
+    baseline_full_color = '#7f8c8d'   # Darker gray for full searchspace
+    
+    # Dynamically assign colors to detected source fractions
+    detected_fractions = sorted(source_fractions)
+    source_fraction_colors = {}
+    for i, fraction in enumerate(detected_fractions):
+        color_idx = i % len(source_fraction_palette)
+        source_fraction_colors[fraction] = source_fraction_palette[color_idx]
+    
+    def get_source_fraction_from_scenario(scenario_name):
+        """Extract source fraction from scenario name."""
+        try:
+            if 'searchspace' in scenario_name:
+                return None  # Baseline scenarios
+            # Extract percentage and convert to fraction
+            percentage = int(scenario_name.split('_')[0])
+            return percentage / 100.0
+        except (ValueError, IndexError):
+            return None
+    
+    def get_color_and_style_for_scenario(scenario_name):
+        """Get color and line style for a scenario."""
+        if 'reduced_searchspace' in scenario_name:
+            return baseline_color, ':'
+        elif 'full_searchspace' in scenario_name:
+            return baseline_full_color, '--'
+        else:
+            fraction = get_source_fraction_from_scenario(scenario_name)
+            color = source_fraction_colors.get(fraction, '#999999')
+            return color, '-'
     
     # Plot each model_type × metric combination (switched from original)
     for row_idx, model_type in enumerate(ordered_model_types):
@@ -182,8 +231,7 @@ def visualize_tl_regression_per_model(json_file_path):
                     )
                     scenario_stats["std"] = scenario_stats["std"].fillna(0)
                     
-                    color = scenario_colors.get(scenario, "#cccccc")
-                    linestyle = ":" if "reduced" in scenario else "--" if "full" in scenario else "-"
+                    color, linestyle = get_color_and_style_for_scenario(scenario)
                     
                     ax.plot(
                         scenario_stats["n_train_pts"],
@@ -217,9 +265,64 @@ def visualize_tl_regression_per_model(json_file_path):
             ax.grid(True, alpha=0.3)
             ax.tick_params(labelsize=9)
             
-            # Add legend only to first subplot
-            if row_idx == 0 and col_idx == 0:
-                ax.legend(loc="best", fontsize=8)
+            # Add baseline models to all plots
+            # Reduced searchspace baseline
+            baseline_reduced = "0_reduced_searchspace"
+            if baseline_reduced in scenarios:
+                baseline_data = df[df["scenario"] == baseline_reduced]
+                if len(baseline_data) > 0:
+                    baseline_stats = (
+                        baseline_data.groupby("n_train_pts")[metric_col]
+                        .agg(["mean", "std"])
+                        .reset_index()
+                    )
+                    baseline_stats["std"] = baseline_stats["std"].fillna(0)
+                    
+                    ax.plot(
+                        baseline_stats["n_train_pts"],
+                        baseline_stats["mean"],
+                        color=baseline_color,
+                        linestyle=":",
+                        linewidth=2,
+                        alpha=0.8,
+                        label="0% (reduced)"
+                    )
+                    ax.fill_between(
+                        baseline_stats["n_train_pts"],
+                        baseline_stats["mean"] - baseline_stats["std"],
+                        baseline_stats["mean"] + baseline_stats["std"],
+                        color=baseline_color,
+                        alpha=0.15,
+                    )
+            
+            # Full searchspace baseline
+            baseline_full = "0_full_searchspace"
+            if baseline_full in scenarios:
+                baseline_full_data = df[df["scenario"] == baseline_full]
+                if len(baseline_full_data) > 0:
+                    baseline_full_stats = (
+                        baseline_full_data.groupby("n_train_pts")[metric_col]
+                        .agg(["mean", "std"])
+                        .reset_index()
+                    )
+                    baseline_full_stats["std"] = baseline_full_stats["std"].fillna(0)
+                    
+                    ax.plot(
+                        baseline_full_stats["n_train_pts"],
+                        baseline_full_stats["mean"],
+                        color=baseline_full_color,
+                        linestyle="--",
+                        linewidth=2,
+                        alpha=0.8,
+                        label="0% (full)"
+                    )
+                    ax.fill_between(
+                        baseline_full_stats["n_train_pts"],
+                        baseline_full_stats["mean"] - baseline_full_stats["std"],
+                        baseline_full_stats["mean"] + baseline_full_stats["std"],
+                        color=baseline_full_color,
+                        alpha=0.15,
+                    )
             
             # Set y-axis limits based on mean values only (not std bands)
             all_means = []
@@ -233,6 +336,15 @@ def visualize_tl_regression_per_model(json_file_path):
                     valid_means = [val for val in scenario_means.values if np.isfinite(val)]
                     all_means.extend(valid_means)
             
+            # Also include both baseline models in y-limits calculation
+            for baseline_scenario in ["0_reduced_searchspace", "0_full_searchspace"]:
+                if baseline_scenario in scenarios:
+                    baseline_data = df[df["scenario"] == baseline_scenario]
+                    if len(baseline_data) > 0 and metric_col in baseline_data.columns:
+                        baseline_means = baseline_data.groupby("n_train_pts")[metric_col].mean()
+                        valid_baseline_means = [val for val in baseline_means.values if np.isfinite(val)]
+                        all_means.extend(valid_baseline_means)
+            
             # Set y-axis range based on means with some padding
             if all_means:
                 mean_min, mean_max = min(all_means), max(all_means)
@@ -243,9 +355,34 @@ def visualize_tl_regression_per_model(json_file_path):
                 if np.isfinite(mean_min - padding) and np.isfinite(mean_max + padding):
                     ax.set_ylim(mean_min - padding, mean_max + padding)
     
-    # Adjust layout
+    # Create legend mapping colors to source fractions and baseline
+    legend_elements = []
+    
+    # Add source fractions (solid lines)
+    for fraction in sorted(source_fractions):
+        if fraction in source_fraction_colors:
+            color = source_fraction_colors[fraction]
+            percentage = int(fraction * 100)
+            legend_elements.append(plt.Line2D([0], [0], color=color, linestyle='-', 
+                                            linewidth=2, label=f'{percentage}%'))
+    
+    # Add baseline models
+    if "0_reduced_searchspace" in scenarios:
+        legend_elements.append(plt.Line2D([0], [0], color=baseline_color, linestyle=':', 
+                                        linewidth=2, label='0% (reduced)'))
+    
+    if "0_full_searchspace" in scenarios:
+        legend_elements.append(plt.Line2D([0], [0], color=baseline_full_color, linestyle='--', 
+                                        linewidth=2, label='0% (full)'))
+    
+    # Add the legend to the first subplot (top-left) in lower right corner
+    first_ax = axes[0, 0]
+    first_ax.legend(handles=legend_elements, loc='lower right', fontsize=8, 
+                   frameon=True, fancybox=True, shadow=True)
+    
+    # Adjust layout and fix title positioning
     plt.tight_layout()
-    plt.subplots_adjust(top=0.93, hspace=0.3, wspace=0.2)
+    plt.subplots_adjust(top=0.90, hspace=0.3, wspace=0.2)
     
     # Save the plot
     input_path = Path(json_file_path)

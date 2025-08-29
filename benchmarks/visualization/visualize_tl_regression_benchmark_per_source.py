@@ -108,7 +108,7 @@ def visualize_tl_regression_per_source(json_file_path):
     # Create figure: n_source_fractions rows × n_metrics columns (switched from original)
     n_rows = len(source_fractions)
     n_cols = len(metrics)
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 3 * n_rows), sharey='row')
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 3 * n_rows))
     
     # Handle single row/column cases
     if n_rows == 1 and n_cols == 1:
@@ -123,9 +123,67 @@ def visualize_tl_regression_per_source(json_file_path):
         fontsize=14, fontweight="bold"
     )
     
-    # Define colors for scenarios dynamically
-    color_palette = ["#8c564b", "#9467bd", "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#e377c2", "#bcbd22"]
-    scenario_colors = {scenario: color_palette[i % len(color_palette)] for i, scenario in enumerate(scenarios)}
+    # Define extensible color palettes (matches per-model script)
+    # Bright, distinct colors for TL models (easily extensible)
+    tl_model_palette = [
+        '#3498db',  # Bright blue
+        '#e74c3c',  # Bright red
+        '#2ecc71',  # Bright green
+        '#f39c12',  # Bright orange
+        '#9b59b6',  # Bright purple
+        '#34495e',  # Dark blue-gray
+        '#e67e22',  # Darker orange
+        '#1abc9c',  # Teal
+        '#8e44ad',  # Dark purple
+        '#2c3e50',  # Very dark blue
+        '#16a085',  # Dark teal
+        '#c0392b',  # Dark red
+        '#27ae60',  # Dark green
+        '#d35400',  # Dark orange
+        '#7f8c8d',  # Medium gray
+    ]
+    
+    # Baseline colors (fixed, muted grays)
+    baseline_reduced_color = '#95a5a6'   # Light gray for reduced searchspace
+    baseline_full_color = '#7f8c8d'      # Darker gray for full searchspace
+    
+    # Dynamically detect TL model types and assign colors
+    tl_model_types = set()
+    for scenario in tl_scenarios:
+        # Extract model type from scenario name
+        if '_index_kernel' in scenario:
+            tl_model_types.add('index_kernel')
+        elif '_mhgp' in scenario:
+            tl_model_types.add('mhgp')
+        elif '_shgp' in scenario:
+            tl_model_types.add('shgp')
+        elif '_source_prior' in scenario:
+            tl_model_types.add('source_prior')
+        # Add more patterns as new models are introduced
+    
+    # Assign colors to detected TL model types
+    model_colors = {
+        'reduced_searchspace': baseline_reduced_color,
+        'full_searchspace': baseline_full_color,
+    }
+    
+    for i, model_type in enumerate(sorted(tl_model_types)):
+        color_idx = i % len(tl_model_palette)
+        model_colors[model_type] = tl_model_palette[color_idx]
+    
+    def get_model_color_and_style(scenario_name):
+        """Get consistent color and line style for a scenario."""
+        if 'reduced_searchspace' in scenario_name:
+            return model_colors['reduced_searchspace'], ':'
+        elif 'full_searchspace' in scenario_name:
+            return model_colors['full_searchspace'], '--'
+        else:
+            # Dynamically detect TL model type from scenario name
+            for model_type in tl_model_types:
+                if f'_{model_type}' in scenario_name:
+                    return model_colors[model_type], '-'
+            # Fallback for unknown model types
+            return '#cccccc', '-'
     
     # Map new column names to old column names for metrics
     metric_column_mapping = {
@@ -163,8 +221,7 @@ def visualize_tl_regression_per_source(json_file_path):
                     )
                     baseline_stats["std"] = baseline_stats["std"].fillna(0)
                     
-                    color = scenario_colors.get(baseline_scenario, "#cccccc")
-                    linestyle = ":" if "reduced" in baseline_scenario else "--"
+                    color, linestyle = get_model_color_and_style(baseline_scenario)
                     
                     ax.plot(
                         baseline_stats["n_train_pts"],
@@ -194,13 +251,13 @@ def visualize_tl_regression_per_source(json_file_path):
                     )
                     tl_stats["std"] = tl_stats["std"].fillna(0)
                     
-                    color = scenario_colors.get(tl_scenario, "#cccccc")
+                    color, linestyle = get_model_color_and_style(tl_scenario)
                     
                     ax.plot(
                         tl_stats["n_train_pts"],
                         tl_stats["mean"],
                         color=color,
-                        linestyle="-",
+                        linestyle=linestyle,
                         linewidth=2,
                         alpha=1.0,
                         label=clean_scenario_name(tl_scenario)
@@ -228,9 +285,7 @@ def visualize_tl_regression_per_source(json_file_path):
             ax.grid(True, alpha=0.3)
             ax.tick_params(labelsize=9)
             
-            # Add legend only to first subplot
-            if row_idx == 0 and col_idx == 0:
-                ax.legend(loc="best", fontsize=8)
+            # No individual legends - we'll create a single figure legend later
             
             # Set y-axis limits based on mean values only (not std bands)
             all_means = []
@@ -255,9 +310,44 @@ def visualize_tl_regression_per_source(json_file_path):
                     if np.isfinite(mean_min - padding) and np.isfinite(mean_max + padding):
                         ax.set_ylim(mean_min - padding, mean_max + padding)
     
-    # Adjust layout
+    # Create single legend with all model types
+    legend_elements = []
+    
+    # Add transfer learning models (solid lines) - dynamically detected
+    model_name_mapping = {
+        'index_kernel': 'GPIndex',
+        'mhgp': 'MHGP', 
+        'shgp': 'SHGP',
+        'source_prior': 'SourcePrior'
+        # Add more mappings as new models are introduced
+    }
+    
+    for model_type in sorted(tl_model_types):
+        if model_type in model_colors:
+            color = model_colors[model_type]
+            clean_name = model_name_mapping.get(model_type, model_type.replace('_', ' ').title())
+            legend_elements.append(plt.Line2D([0], [0], color=color, linestyle='-', 
+                                            linewidth=2, label=clean_name))
+    
+    # Add baseline models
+    if any('reduced_searchspace' in scenario for scenario in baseline_scenarios):
+        legend_elements.append(plt.Line2D([0], [0], color=model_colors['reduced_searchspace'], 
+                                        linestyle=':', linewidth=2, 
+                                        label='GP 0% (reduced)'))
+    
+    if any('full_searchspace' in scenario for scenario in baseline_scenarios):
+        legend_elements.append(plt.Line2D([0], [0], color=model_colors['full_searchspace'], 
+                                        linestyle='--', linewidth=2, 
+                                        label='GP 0% (full)'))
+    
+    # Add the legend to the first subplot (top-left) in lower right corner
+    first_ax = axes[0, 0]
+    first_ax.legend(handles=legend_elements, loc='lower right', fontsize=8, 
+                   frameon=True, fancybox=True, shadow=True)
+    
+    # Adjust layout and fix title positioning
     plt.tight_layout()
-    plt.subplots_adjust(top=0.93, hspace=0.3, wspace=0.2)
+    plt.subplots_adjust(top=0.90, hspace=0.3, wspace=0.2)
     
     # Save the plot
     input_path = Path(json_file_path)
