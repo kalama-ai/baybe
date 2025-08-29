@@ -151,6 +151,7 @@ def run_tl_regression_benchmark(
                 target_test = target_data.iloc[test_indices].copy()
 
                 # Evaluate all models
+                # TODO: How does vanilla GP handle train data with task index?
                 scenario_results = []
                 scenario_results.extend(
                     _evaluate_naive_models(
@@ -241,8 +242,9 @@ def _train_and_evaluate_model(
 
     # Prepare training data
     train_data_prepared = train_data.copy()
-    if task_column and task_value:
-        train_data_prepared[task_column] = task_value
+    #TODO: This should already contain task values
+    # if task_column and task_value:
+    #     train_data_prepared[task_column] = task_value
 
     # Train model
     model.fit(
@@ -251,8 +253,8 @@ def _train_and_evaluate_model(
 
     # Prepare test data
     test_data_prepared = test_data.copy()
-    if task_column and task_value:
-        test_data_prepared[task_column] = task_value
+    # if task_column and task_value:
+    #     test_data_prepared[task_column] = task_value
 
     # Evaluate model
     predictions = model.posterior_stats(test_data_prepared, stats=["mean"])
@@ -344,8 +346,8 @@ def _evaluate_naive_models(
             tl_searchspace,
             objective,
             "0_full_searchspace",
-            task_column,
-            task_value,
+            #task_column,
+            #task_value,
         )
     )
 
@@ -390,8 +392,8 @@ def _evaluate_transfer_learning_models(
                 tl_searchspace,
                 objective,
                 scenario_name,
-                task_column,
-                task_value,
+                #task_column,
+                # task_value,
             )
         )
 
