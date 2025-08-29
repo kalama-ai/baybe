@@ -22,6 +22,8 @@ from baybe.objectives import SingleTargetObjective
 from baybe.parameters import TaskParameter
 from baybe.searchspace import SearchSpace
 from baybe.surrogates.gaussian_process.core import GaussianProcessSurrogate
+from baybe.surrogates.transfergpbo import MHGPGaussianProcessSurrogate, SHGPGaussianProcessSurrogate
+from baybe.surrogates.source_prior import SourcePriorGaussianProcessSurrogate
 from benchmarks.definition import TransferLearningRegressionBenchmarkSettings
 
 
@@ -203,6 +205,10 @@ def _create_tl_models() -> dict[str, GaussianProcessSurrogate]:
     """
     return {
         "index_kernel": GaussianProcessSurrogate(),
+        "mhgp": MHGPGaussianProcessSurrogate(),
+        "shgp": SHGPGaussianProcessSurrogate(),
+        "source_prior": SourcePriorGaussianProcessSurrogate(),
+
     }
 
 
