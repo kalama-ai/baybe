@@ -51,14 +51,18 @@ def extract_scenarios_and_metrics(df):
 
 def clean_scenario_name(scenario_name):
     """Convert internal scenario names to clean display names."""
-    if scenario_name == "0_reduced_searchspace":
-        return "GP 0% (reduced searchspace)"
-    elif scenario_name == "0_full_searchspace":
-        return "GP 0% (full searchspace)"  
-    elif scenario_name == "1_index_kernel":
-        return "GPIndex 1%"
-    elif scenario_name == "5_index_kernel":
-        return "GPIndex 5%"
+    if "_reduced_searchspace" in scenario_name:
+        fraction = scenario_name.split("_")[0]
+        return f"GP {fraction}% (reduced searchspace)"
+    elif "_full_searchspace" in scenario_name:
+        fraction = scenario_name.split("_")[0]
+        return f"GP {fraction}% (full searchspace)"
+    elif "_index_kernel" in scenario_name:
+        fraction = scenario_name.split("_")[0]
+        return f"GPIndex {fraction}%"
+    elif "_source_prior" in scenario_name:
+        fraction = scenario_name.split("_")[0]
+        return f"SourcePrior {fraction}%"
     else:
         return scenario_name
 
@@ -76,8 +80,8 @@ def visualize_tl_regression_per_source(json_file_path):
     print(f"Found metrics: {metrics}")
     
     # Separate baseline scenarios from TL scenarios
-    baseline_scenarios = [s for s in scenarios if s.startswith("0_")]
-    tl_scenarios = [s for s in scenarios if not s.startswith("0_")]
+    baseline_scenarios = [s for s in scenarios if "_searchspace" in s]
+    tl_scenarios = [s for s in scenarios if "_searchspace" not in s]
     
     # Get source fractions
     source_fractions = sorted(df["fraction_source"].unique())
@@ -101,9 +105,9 @@ def visualize_tl_regression_per_source(json_file_path):
     plt.style.use("default")
     sns.set_palette("tab10")
     
-    # Create figure: n_metrics rows × n_source_fractions columns
-    n_rows = len(metrics)
-    n_cols = len(source_fractions)
+    # Create figure: n_source_fractions rows × n_metrics columns (switched from original)
+    n_rows = len(source_fractions)
+    n_cols = len(metrics)
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 3 * n_rows), sharey='row')
     
     # Handle single row/column cases
@@ -119,13 +123,9 @@ def visualize_tl_regression_per_source(json_file_path):
         fontsize=14, fontweight="bold"
     )
     
-    # Define colors for scenarios
-    scenario_colors = {
-        "0_reduced_searchspace": "#8c564b",
-        "0_full_searchspace": "#9467bd",
-        "1_index_kernel": "#1f77b4",
-        "5_index_kernel": "#ff7f0e"
-    }
+    # Define colors for scenarios dynamically
+    color_palette = ["#8c564b", "#9467bd", "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#e377c2", "#bcbd22"]
+    scenario_colors = {scenario: color_palette[i % len(color_palette)] for i, scenario in enumerate(scenarios)}
     
     # Map new column names to old column names for metrics
     metric_column_mapping = {
@@ -139,9 +139,9 @@ def visualize_tl_regression_per_source(json_file_path):
         'SPEARMAN_RHO': 'spearman_rho_score'
     }
     
-    # Plot each metric × source combination
-    for row_idx, metric in enumerate(metrics):
-        for col_idx, source_fraction in enumerate(source_fractions):
+    # Plot each source × metric combination (switched from original)
+    for row_idx, source_fraction in enumerate(source_fractions):
+        for col_idx, metric in enumerate(metrics):
             ax = axes[row_idx, col_idx]
             
             # Get metric column name for new format
@@ -215,15 +215,15 @@ def visualize_tl_regression_per_source(json_file_path):
             
             # Customize subplot
             if row_idx == 0:  # Column title only on top row
-                ax.set_title(f"{int(source_fraction * 100)}% Source Data", fontsize=11)
+                higher_better = metrics_higher_is_better.get(metric, True)
+                direction = "higher better" if higher_better else "lower better"
+                ax.set_title(f"{metric} ({direction})", fontsize=11)
             
             if row_idx == n_rows - 1:  # X-label only on bottom row
                 ax.set_xlabel("Number of Target Training Points", fontsize=10)
             
             if col_idx == 0:  # Y-label only on leftmost column
-                higher_better = metrics_higher_is_better.get(metric, True)
-                direction = "higher better" if higher_better else "lower better"
-                ax.set_ylabel(f"{metric} ({direction})", fontsize=10)
+                ax.set_ylabel(f"{int(source_fraction * 100)}% Source Data", fontsize=10)
             
             ax.grid(True, alpha=0.3)
             ax.tick_params(labelsize=9)

@@ -51,24 +51,30 @@ def extract_scenarios_and_metrics(df):
 
 def clean_scenario_name(scenario_name):
     """Convert internal scenario names to clean display names."""
-    if scenario_name == "0_reduced_searchspace":
-        return "GP 0% (reduced)"
-    elif scenario_name == "0_full_searchspace":
-        return "GP 0% (full)"  
-    elif scenario_name == "1_index_kernel":
-        return "GPIndex 1%"
-    elif scenario_name == "5_index_kernel":
-        return "GPIndex 5%"
+    if "_reduced_searchspace" in scenario_name:
+        fraction = scenario_name.split("_")[0]
+        return f"GP {fraction}% (reduced)"
+    elif "_full_searchspace" in scenario_name:
+        fraction = scenario_name.split("_")[0]
+        return f"GP {fraction}% (full)"
+    elif "_index_kernel" in scenario_name:
+        fraction = scenario_name.split("_")[0]
+        return f"GPIndex {fraction}%"
+    elif "_source_prior" in scenario_name:
+        fraction = scenario_name.split("_")[0]
+        return f"SourcePrior {fraction}%"
     else:
         return scenario_name
 
 
 def get_model_type_from_scenario(scenario_name):
     """Extract model type from scenario name for grouping."""
-    if scenario_name.endswith("_searchspace"):
+    if "_searchspace" in scenario_name:
         return "Baseline_GP"
-    elif scenario_name.endswith("_index_kernel"):
+    elif "_index_kernel" in scenario_name:
         return "GPIndex"
+    elif "_source_prior" in scenario_name:
+        return "SourcePrior"
     else:
         return "Unknown"
 
@@ -94,7 +100,7 @@ def visualize_tl_regression_per_model(json_file_path):
         model_groups[model_type].append(scenario)
     
     # Order model types for consistent display
-    model_type_order = ["Baseline_GP", "GPIndex"]
+    model_type_order = ["Baseline_GP", "GPIndex", "SourcePrior"]
     ordered_model_types = [mt for mt in model_type_order if mt in model_groups]
     
     # Get source fractions
@@ -118,9 +124,9 @@ def visualize_tl_regression_per_model(json_file_path):
     plt.style.use("default")
     sns.set_palette("tab10")
     
-    # Create figure: n_metrics rows × n_model_types columns
-    n_rows = len(metrics)
-    n_cols = len(ordered_model_types)
+    # Create figure: n_model_types rows × n_metrics columns (switched from original)
+    n_rows = len(ordered_model_types)
+    n_cols = len(metrics)
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 3 * n_rows), sharey='row')
     
     # Handle single row/column cases
@@ -148,17 +154,13 @@ def visualize_tl_regression_per_model(json_file_path):
         'SPEARMAN_RHO': 'spearman_rho_score'
     }
     
-    # Define colors for scenarios
-    scenario_colors = {
-        "0_reduced_searchspace": "#8c564b",
-        "0_full_searchspace": "#9467bd",
-        "1_index_kernel": "#1f77b4",
-        "5_index_kernel": "#ff7f0e"
-    }
+    # Define colors for scenarios dynamically
+    color_palette = ["#8c564b", "#9467bd", "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#e377c2", "#bcbd22"]
+    scenario_colors = {scenario: color_palette[i % len(color_palette)] for i, scenario in enumerate(scenarios)}
     
-    # Plot each metric × model_type combination
-    for row_idx, metric in enumerate(metrics):
-        for col_idx, model_type in enumerate(ordered_model_types):
+    # Plot each model_type × metric combination (switched from original)
+    for row_idx, model_type in enumerate(ordered_model_types):
+        for col_idx, metric in enumerate(metrics):
             ax = axes[row_idx, col_idx]
             
             # Get metric column name for new format
@@ -202,15 +204,15 @@ def visualize_tl_regression_per_model(json_file_path):
             
             # Customize subplot
             if row_idx == 0:  # Column title only on top row
-                ax.set_title(model_type.replace("_", " "), fontsize=11)
+                higher_better = metrics_higher_is_better.get(metric, True)
+                direction = "higher better" if higher_better else "lower better"
+                ax.set_title(f"{metric} ({direction})", fontsize=11)
             
             if row_idx == n_rows - 1:  # X-label only on bottom row
                 ax.set_xlabel("Number of Target Training Points", fontsize=10)
             
             if col_idx == 0:  # Y-label only on leftmost column
-                higher_better = metrics_higher_is_better.get(metric, True)
-                direction = "higher better" if higher_better else "lower better"
-                ax.set_ylabel(f"{metric} ({direction})", fontsize=10)
+                ax.set_ylabel(model_type.replace("_", " "), fontsize=10)
             
             ax.grid(True, alpha=0.3)
             ax.tick_params(labelsize=9)
