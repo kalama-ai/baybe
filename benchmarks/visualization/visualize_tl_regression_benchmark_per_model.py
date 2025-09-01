@@ -63,6 +63,12 @@ def clean_scenario_name(scenario_name):
     elif "_source_prior" in scenario_name:
         fraction = scenario_name.split("_")[0]
         return f"SourcePrior {fraction}%"
+    elif "_mhgp" in scenario_name:
+        fraction = scenario_name.split("_")[0]
+        return f"MHGP {fraction}%"
+    elif "_shgp" in scenario_name:
+        fraction = scenario_name.split("_")[0]
+        return f"SHGP {fraction}%"
     else:
         return scenario_name
 
@@ -75,6 +81,10 @@ def get_model_type_from_scenario(scenario_name):
         return "GPIndex"
     elif "_source_prior" in scenario_name:
         return "SourcePrior"
+    elif "_shgp" in scenario_name:
+        return "SHGP"
+    elif "_mhgp" in scenario_name:
+        return "MHGP"
     else:
         return "Unknown"
 
@@ -100,7 +110,7 @@ def visualize_tl_regression_per_model(json_file_path):
         model_groups[model_type].append(scenario)
     
     # Order model types for consistent display
-    model_type_order = ["Baseline_GP", "GPIndex", "SourcePrior"]
+    model_type_order = ["Baseline_GP", "GPIndex", "SourcePrior", "SHGP", "MHGP"]
     ordered_model_types = [mt for mt in model_type_order if mt in model_groups]
     
     # Get source fractions
