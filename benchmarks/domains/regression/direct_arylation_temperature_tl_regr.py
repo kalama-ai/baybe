@@ -36,17 +36,17 @@ def direct_arylation_temperature_tl_regr(
     """
     results_df = run_tl_regression_benchmark(
         settings=settings,
-        load_data_fn=load_data,
-        make_searchspace_fn=make_searchspace,
-        create_objective_fn=make_objective,
+        data_loader=load_data,
+        searchspace_factory=make_searchspace,
+        objective_factory=make_objective,
     )
     return results_df
 
 
 # Define the benchmark settings
 benchmark_config = TransferLearningRegressionBenchmarkSettings(
-    n_mc_iterations=50,
-    max_n_train_points=20,
+    n_mc_iterations=30,
+    max_n_train_points=10,
     source_fractions=(0.01, 0.05, 0.1, 0.2),
     noise_std=0.0,
 )

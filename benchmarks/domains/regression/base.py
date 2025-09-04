@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol
 
 import numpy as np
 import pandas as pd
@@ -16,112 +15,191 @@ from sklearn.metrics import (
     r2_score,
     root_mean_squared_error,
 )
+from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
 from baybe.objectives import SingleTargetObjective
 from baybe.parameters import TaskParameter
 from baybe.searchspace import SearchSpace
 from baybe.surrogates.gaussian_process.core import GaussianProcessSurrogate
-from baybe.surrogates.transfergpbo import MHGPGaussianProcessSurrogate, SHGPGaussianProcessSurrogate
-from baybe.surrogates.source_prior import SourcePriorGaussianProcessSurrogate
 from benchmarks.definition import TransferLearningRegressionBenchmarkSettings
 
 
-def kendall_tau_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+class DataLoader(Protocol):
+    """Protocol for data loading functions used in TL regression benchmarks."""
+
+    def __call__(self) -> pd.DataFrame:
+        """Load and return the dataset for regression benchmark evaluation.
+
+        Returns:
+            DataFrame containing the data with features and target values.
+        """
+        ...
+
+
+class SearchSpaceFactory(Protocol):
+    """Protocol for SearchSpace creation used in TL regression benchmarks."""
+
+    def __call__(self, data: pd.DataFrame, use_task_parameter: bool) -> SearchSpace:
+        """Create a SearchSpace for regression benchmark evaluation.
+
+        Args:
+            data: The dataset to create the search space from.
+            use_task_parameter: Whether to include task parameter for TL
+                scenarios. If True, creates search space with TaskParameter for
+                TL models. If False, creates vanilla search space without
+                task parameter.
+
+        Returns:
+            The TL and non-TL searchspaces for the benchmark.
+        """
+        ...
+
+
+class ObjectiveFactory(Protocol):
+    """Protocol for objective creation functions used in regression benchmarks."""
+
+    def __call__(self) -> SingleTargetObjective:
+        """Create and return the optimization objective for regression benchmarks.
+
+        Returns:
+            The objective of the benchmark.
+        """
+        ...
+
+
+def kendall_tau_score(x: np.ndarray, y: np.ndarray, /) -> float:
     """Calculate Kendall's Tau correlation coefficient.
 
+    Values close to 1 indicate strong positive correlation, values close to -1
+    indicate strong negative correlation, and values near 0 indicate no
+    correlation.
+
     Args:
-        y_true: True target values
-        y_pred: Predicted target values
+        x: First array of values.
+        y: Second array of values, same shape as x.
 
     Returns:
-        Kendall's Tau correlation coefficient
+        Kendall's Tau correlation coefficient.
     """
-    tau, _ = kendalltau(y_true, y_pred)
+    tau, _ = kendalltau(x, y)
     return tau
 
 
-def spearman_rho_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+def spearman_rho_score(x: np.ndarray, y: np.ndarray, /) -> float:
     """Calculate Spearman's Rho correlation coefficient.
 
+    Values close to 1 indicate strong positive monotonic correlation,
+    values close to -1 indicate strong negative monotonic correlation.
+
     Args:
-        y_true: True target values
-        y_pred: Predicted target values
+        x: First array of values.
+        y: Second array of values, same shape as x.
 
     Returns:
-        Spearman's Rho correlation coefficient
+        Spearman's Rho correlation coefficient.
     """
-    rho, _ = spearmanr(y_true, y_pred)
+    rho, _ = spearmanr(x, y)
     return rho
+
+
+TL_MODELS = {
+    "index_kernel": GaussianProcessSurrogate,
+}
+
+
+REGRESSION_METRICS = [
+    root_mean_squared_error,
+    mean_squared_error,
+    r2_score,
+    mean_absolute_error,
+    max_error,
+    explained_variance_score,
+    kendall_tau_score,
+    spearman_rho_score,
+]
 
 
 def run_tl_regression_benchmark(
     settings: TransferLearningRegressionBenchmarkSettings,
-    load_data_fn: Callable[..., pd.DataFrame],
-    make_searchspace_fn: Callable[[pd.DataFrame, bool], SearchSpace],
-    create_objective_fn: Callable[[], SingleTargetObjective],
+    data_loader: DataLoader,
+    searchspace_factory: SearchSpaceFactory,
+    objective_factory: ObjectiveFactory,
 ) -> pd.DataFrame:
     """Run a transfer learning regression benchmark.
 
     This function evaluates the performance of transfer learning models compared to
-    vanilla Gaussian Process models on regression tasks. It varies the fraction of
+    non transfer learning models on regression tasks. It varies the fraction of
     source data used for training and the number of training points in the target task.
 
-    For each combination, it trains both vanilla GP (target data only) and transfer
-    learning models (source + target data), then evaluates their predictive
+    For each combination, it trains a surrogate on target data only and transfer
+    learning models on source + target data, then evaluates their predictive
     performance on held-out target test data using the provided regression metrics.
 
     Args:
         settings: The benchmark settings.
-        load_data_fn: Function that loads the dataset.
-        make_searchspace_fn: Function that creates search spaces for
-            non-TL and TL models.
-        create_objective_fn: Function that creates the objective function.
+        data_loader: Function that loads the dataset for regression evaluation.
+        searchspace_factory: Function that creates search spaces for both
+            non-TL and TL model scenarios.
+        objective_factory: Function that creates the optimization objective.
 
     Returns:
         DataFrame with benchmark results containing performance metrics for each
-        model, training scenario, and Monte Carlo iteration.
-    """
-    # Create target objective
-    objective = create_objective_fn()
+        model, training scenario, and Monte Carlo iteration. Columns include:
 
-    # Load data and create search spaces
-    data = load_data_fn()
-    # Create SearchSpace without task parameter (vanilla GP)
-    vanilla_searchspace = make_searchspace_fn(data=data, use_task_parameter=False)
+      - scenario: Model scenario identifier (e.g., "0_reduced_searchspace",
+        "5_index_kernel")
+      - Performance metrics: root_mean_squared_error, mean_squared_error, r2_score,
+        mean_absolute_error, max_error, explained_variance_score, kendall_tau_score,
+        spearman_rho_score
+      - Experimental metadata: mc_iter, n_train_pts, fraction_source, n_source_pts,
+        n_test_pts, source_data_seed
+
+    """
+    objective = objective_factory()
+    data = data_loader()
+
+    # Create search space without task parameter
+    vanilla_searchspace = searchspace_factory(data=data, use_task_parameter=False)
 
     # Create transfer learning search space (with task parameter)
-    tl_searchspace = make_searchspace_fn(data=data, use_task_parameter=True)
+    tl_searchspace = searchspace_factory(data=data, use_task_parameter=True)
 
     # Extract task parameter details
     task_param = next(
         p for p in tl_searchspace.parameters if isinstance(p, TaskParameter)
     )
     name_task = task_param.name
-    target_task = task_param.active_values[0]  # Extract single target task
+
+    # Extract target tasks
+    target_tasks = task_param.active_values
     all_values = task_param.values
-    source_tasks = [val for val in all_values if val != target_task]
+    source_tasks = [val for val in all_values if val not in target_tasks]
 
     # Split data into source and target
     source_data = data[data[name_task].isin(source_tasks)]
-    target_data = data[data[name_task] == target_task]
+    target_data = data[data[name_task].isin(target_tasks)]
 
-    # Main benchmark loop
-    results = []
-
-    # Create progress bar for Monte Carlo iterations
-    mc_iter_bar = tqdm(
-        range(settings.n_mc_iterations),
-        desc="Monte Carlo iterations",
-        unit="iter",
-        position=0,
-        leave=True,
+    # Ensure sufficient target data for train/test splits
+    assert len(target_data) >= 2 * settings.max_n_train_points, (
+        f"Insufficient target data:"
+        f"{len(target_data)} < {2 * settings.max_n_train_points}"
     )
 
-    for mc_iter in mc_iter_bar:
-        # Create train/test split for target task
-        target_indices = np.random.permutation(len(target_data))
+    # Collect all benchmark results across MC iterations and scenarios
+    results: list[dict[str, Any]] = []
 
+    # Calculate total iterations for single progress bar
+    total_iterations = (
+        settings.n_mc_iterations
+        * len(settings.source_fractions)
+        * settings.max_n_train_points
+    )
+
+    # Single progress bar for all iterations
+    pbar = tqdm(total=total_iterations, desc="Running benchmark", unit="eval")
+
+    for mc_iter in range(settings.n_mc_iterations):
         for fraction_source in settings.source_fractions:
             # Sample source data ensuring same fraction from each source task
             source_subset = _sample_source_data(
@@ -132,27 +210,24 @@ def run_tl_regression_benchmark(
                 settings.random_seed + mc_iter,
             )
 
-            # Create progress bar for training points
-            train_pts_bar = tqdm(
-                range(1, settings.max_n_train_points + 1),
-                desc=f"MC {mc_iter + 1}/{settings.n_mc_iterations},"
-                f"Source frac {fraction_source:.1f}",
-                unit="pts",
-                position=1,
-                leave=False,
-            )
+            for n_train_pts in range(1, settings.max_n_train_points + 1):
+                # Update progress bar description
+                pbar.set_description(
+                    f"MC {mc_iter + 1}/{settings.n_mc_iterations} | "
+                    f"Frac {fraction_source:.2f} | "
+                    f"Pts {n_train_pts}/{settings.max_n_train_points}"
+                )
 
-            for n_train_pts in train_pts_bar:
-                train_indices = target_indices[:n_train_pts]
-                test_indices = target_indices[
-                    n_train_pts : n_train_pts + settings.max_n_train_points
-                ]
-                target_train = target_data.iloc[train_indices].copy()
-                target_test = target_data.iloc[test_indices].copy()
+                target_train, target_test = train_test_split(
+                    target_data,
+                    train_size=n_train_pts,
+                    test_size=settings.max_n_train_points,
+                    random_state=settings.random_seed + mc_iter,
+                    shuffle=True,
+                )
 
-                # Evaluate all models
-                # TODO: How does vanilla GP handle train data with task index?
-                scenario_results = []
+                # Collect results for current training scenario
+                scenario_results: list[dict[str, Any]] = []
                 scenario_results.extend(
                     _evaluate_naive_models(
                         target_train,
@@ -160,8 +235,6 @@ def run_tl_regression_benchmark(
                         vanilla_searchspace,
                         tl_searchspace,
                         objective,
-                        name_task,
-                        target_task,
                     )
                 )
                 scenario_results.extend(
@@ -172,8 +245,6 @@ def run_tl_regression_benchmark(
                         tl_searchspace,
                         objective,
                         fraction_source,
-                        name_task,
-                        target_task,
                     )
                 )
 
@@ -191,70 +262,76 @@ def run_tl_regression_benchmark(
                     )
                     results.append(scenario_result)
 
-    # Convert results to DataFrame
+                pbar.update(1)
+
+    pbar.close()
+
     results_df = pd.DataFrame(results)
 
     return results_df
 
 
-def _create_tl_models() -> dict[str, GaussianProcessSurrogate]:
-    """Create transfer learning model scenarios.
+def _sample_source_data(
+    source_data: pd.DataFrame,
+    source_tasks: list[str],
+    fraction_source: float,
+    task_column: str,
+    source_data_seed: int,
+) -> pd.DataFrame:
+    """Sample source data ensuring same fraction from each source task.
+
+    Args:
+        source_data: DataFrame containing all source task data.
+        source_tasks: List of source task identifiers.
+        fraction_source: Fraction of data to sample from each source task.
+        task_column: Name of column containing task identifiers.
+        source_data_seed: Random seed for reproducible sampling.
 
     Returns:
-        Dictionary mapping model suffix names to initialized GP surrogate models
-        for transfer learning evaluation.
+        Combined DataFrame with sampled data from all source tasks.
     """
-    return {
-        "index_kernel": GaussianProcessSurrogate(),
-        "mhgp": MHGPGaussianProcessSurrogate(),
-        "shgp": SHGPGaussianProcessSurrogate(),
-        "source_prior": SourcePriorGaussianProcessSurrogate(),
+    # Collect sampled subsets from each source task
+    source_subsets: list[pd.DataFrame] = []
 
-    }
+    for source_task in source_tasks:
+        task_data = source_data[source_data[task_column] == source_task]
+        if len(task_data) > 0:
+            task_subset = task_data.sample(
+                frac=fraction_source,
+                random_state=source_data_seed,
+            )
+            source_subsets.append(task_subset)
+    return pd.concat(source_subsets, ignore_index=True)
 
 
-def _train_and_evaluate_model(
+def _evaluate_model(
     model: GaussianProcessSurrogate,
     train_data: pd.DataFrame,
     test_data: pd.DataFrame,
     searchspace: SearchSpace,
     objective: SingleTargetObjective,
     scenario_name: str,
-    task_column: str | None = None,
-    task_value: str | None = None,
 ) -> dict[str, Any]:
     """Train a single model and evaluate its performance.
 
     Args:
-        model: The Gaussian Process model to train
-        train_data: Training data
-        test_data: Test data for evaluation
-        searchspace: Search space for the model
-        objective: Optimization objective
-        scenario_name: Name of the scenario for results
-        task_column: Name of task parameter column
-        task_value: Value to set for task parameter
+        model: The surrogate model to train.
+        train_data: Training data.
+        test_data: Test data for evaluation.
+        searchspace: Search space for the model.
+        objective: Optimization objective.
+        scenario_name: Name of the scenario for results.
 
     Returns:
-        Dictionary with scenario name and evaluation metrics
+        Dictionary with scenario name and evaluation metrics.
     """
     target_column = objective._target.name
-
-    # Prepare training data
     train_data_prepared = train_data.copy()
-    #TODO: This should already contain task values
-    # if task_column and task_value:
-    #     train_data_prepared[task_column] = task_value
+    test_data_prepared = test_data.copy()
 
-    # Train model
     model.fit(
         searchspace=searchspace, objective=objective, measurements=train_data_prepared
     )
-
-    # Prepare test data
-    test_data_prepared = test_data.copy()
-    # if task_column and task_value:
-    #     test_data_prepared[task_column] = task_value
 
     # Evaluate model
     predictions = model.posterior_stats(test_data_prepared, stats=["mean"])
@@ -269,65 +346,31 @@ def _train_and_evaluate_model(
     return result
 
 
-def _sample_source_data(
-    source_data: pd.DataFrame,
-    source_tasks: list[str],
-    fraction_source: float,
-    task_column: str,
-    source_data_seed: int,
-) -> pd.DataFrame:
-    """Sample source data ensuring same fraction from each source task.
-
-    Args:
-        source_data: DataFrame containing all source task data
-        source_tasks: List of source task identifiers
-        fraction_source: Fraction of data to sample from each source task
-        task_column: Name of column containing task identifiers
-        source_data_seed: Random seed for reproducible sampling
-
-    Returns:
-        Combined DataFrame with sampled data from all source tasks
-    """
-    source_subsets = []
-    for source_task in source_tasks:
-        task_data = source_data[source_data[task_column] == source_task]
-        if len(task_data) > 0:
-            task_subset = task_data.sample(
-                frac=fraction_source,
-                random_state=source_data_seed,
-            )
-            source_subsets.append(task_subset)
-    return pd.concat(source_subsets, ignore_index=True)
-
-
 def _evaluate_naive_models(
     target_train: pd.DataFrame,
     target_test: pd.DataFrame,
     vanilla_searchspace: SearchSpace,
     tl_searchspace: SearchSpace,
     objective: SingleTargetObjective,
-    task_column: str,
-    task_value: str,
 ) -> list[dict[str, Any]]:
     """Evaluate both naive model baselines that do not use source data.
 
     Args:
-        target_train: Target task training data
-        target_test: Target task test data
-        vanilla_searchspace: Search space without task parameter
-        tl_searchspace: Search space with task parameter
-        objective: Optimization objective
-        task_column: Name of task parameter column
-        task_value: Value for task parameter
+        target_train: Target task training data.
+        target_test: Target task test data.
+        vanilla_searchspace: Search space without task parameter.
+        tl_searchspace: Search space with task parameter.
+        objective: Optimization objective.
 
     Returns:
-        List of evaluation results for naive baselines
+        List of evaluation results for naive baselines.
     """
-    results = []
+    # Collect evaluation results for models without source data
+    results: list[dict[str, Any]] = []
 
-    # Naive GP on reduced searchspace (no task parameter)
+    # Naive GP on reduced search space (no source data, no task parameter)
     results.append(
-        _train_and_evaluate_model(
+        _evaluate_model(
             GaussianProcessSurrogate(),
             target_train,
             target_test,
@@ -337,17 +380,15 @@ def _evaluate_naive_models(
         )
     )
 
-    # Naive GP on full searchspace (with task parameter)
+    # Naive GP on full search space (no source data, with task parameter)
     results.append(
-        _train_and_evaluate_model(
+        _evaluate_model(
             GaussianProcessSurrogate(),
             target_train,
             target_test,
             tl_searchspace,
             objective,
             "0_full_searchspace",
-            #task_column,
-            #task_value,
         )
     )
 
@@ -361,39 +402,36 @@ def _evaluate_transfer_learning_models(
     tl_searchspace: SearchSpace,
     objective: SingleTargetObjective,
     fraction_source: float,
-    task_column: str,
-    task_value: str,
 ) -> list[dict[str, Any]]:
     """Evaluate all transfer learning models using source and target data.
 
     Args:
-        source_data: Source task data
-        target_train: Target task training data
-        target_test: Target task test data
-        tl_searchspace: Search space with task parameter
-        objective: Optimization objective
-        fraction_source: Fraction of source data used
-        task_column: Name of task parameter column
-        task_value: Value for task parameter
+        source_data: Source task data.
+        target_train: Target task training data.
+        target_test: Target task test data.
+        tl_searchspace: Search space with task parameter.
+        objective: Optimization objective.
+        fraction_source: Fraction of source data used.
 
     Returns:
-        List of evaluation results for transfer learning models
+        List of evaluation results for transfer learning models.
     """
-    results = []
+    # Collect evaluation results for transfer learning models
+    results: list[dict[str, Any]] = []
+
     combined_data = pd.concat([source_data, target_train])
 
-    for model_suffix, model in _create_tl_models().items():
+    for model_suffix, model_class in TL_MODELS.items():
         scenario_name = f"{int(100 * fraction_source)}_{model_suffix}"
+        model = model_class()
         results.append(
-            _train_and_evaluate_model(
+            _evaluate_model(
                 model,
                 combined_data,
                 target_test,
                 tl_searchspace,
                 objective,
                 scenario_name,
-                #task_column,
-                # task_value,
             )
         )
 
@@ -408,27 +446,17 @@ def _calculate_metrics(
     """Calculate regression metrics for model predictions.
 
     Args:
-        true_values: True target values
-        predictions: Model predictions DataFrame with mean columns
-        target_column: Name of the target column
+        true_values: True target values.
+        predictions: Model predictions DataFrame with mean columns.
+        target_column: Name of the target column.
 
     Returns:
-        Dictionary with metric names as keys and metric values as values
+        Dictionary with metric names as keys and metric values as values.
     """
-    regression_metrics = [
-        root_mean_squared_error,
-        mean_squared_error,
-        r2_score,
-        mean_absolute_error,
-        max_error,
-        explained_variance_score,
-        kendall_tau_score,
-        spearman_rho_score,
-    ]
     results = {}
     pred_values = predictions[f"{target_column}_mean"].values
 
-    for metric_func in regression_metrics:
+    for metric_func in REGRESSION_METRICS:
         metric_value = metric_func(true_values, pred_values)
         results[metric_func.__name__] = metric_value
 

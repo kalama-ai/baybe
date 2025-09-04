@@ -94,8 +94,8 @@ def run_quadratic_tl_regression_benchmark(
     """
     return run_tl_regression_benchmark(
         settings=settings,
-        load_data_fn=load_data,
-        create_searchspaces_fn=create_quadratic_searchspaces,
-        create_objective_fn=create_quadratic_objective,
+        data_loader=load_data,
+        searchspace_factory=create_quadratic_searchspaces,
+        objective_factory=create_quadratic_objective,
         load_data_kwargs={"n_sources": n_sources, "keep_min": keep_min},
     )

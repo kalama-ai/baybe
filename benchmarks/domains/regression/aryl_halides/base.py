@@ -84,7 +84,7 @@ def run_aryl_halide_tl_regression_benchmark(
 
     return run_tl_regression_benchmark(
         settings=settings,
-        load_data_fn=load_data,
-        make_searchspace_fn=make_searchspace_wrapper,
-        create_objective_fn=make_objective,
+        data_loader=load_data,
+        searchspace_factory=make_searchspace_wrapper,
+        objective_factory=make_objective,
     )
