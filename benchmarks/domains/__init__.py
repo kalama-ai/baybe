@@ -30,6 +30,9 @@ from benchmarks.domains.regression.easom.easom_tl_47_negate_noise5_regr import (
 from benchmarks.domains.regression.hartmann.hartmann_tl_3_20_15_regr import (
     hartmann_tl_3_20_15_regr_benchmark,
 )
+from benchmarks.domains.regression.michalewicz.michalewicz_tl_continuous_regr import (
+    michalewicz_tl_continuous_regr_benchmark,
+)
 from benchmarks.domains.synthetic_2C1D_1C import synthetic_2C1D_1C_benchmark
 from benchmarks.domains.transfer_learning.aryl_halides.sou_CT_I_tar_BM import (
     aryl_halide_CT_I_BM_tl_benchmark,
@@ -76,6 +79,7 @@ BENCHMARKS: list[Benchmark] = [
     aryl_halide_CT_I_BM_tl_regr_benchmark,
     easom_tl_47_negate_noise5_regr_benchmark,
     hartmann_tl_3_20_15_regr_benchmark,
+    michalewicz_tl_continuous_regr_benchmark,
 ]
 
 
