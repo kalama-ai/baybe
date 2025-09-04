@@ -33,6 +33,12 @@ from benchmarks.domains.regression.hartmann.hartmann_tl_3_20_15_regr import (
 from benchmarks.domains.regression.michalewicz.michalewicz_tl_continuous_regr import (
     michalewicz_tl_continuous_regr_benchmark,
 )
+from benchmarks.domains.transfer_learning.sigmoid.sigmoid_partially_inverted_tl import (
+    sigmoid_partially_inverted_tl_benchmark,
+)       
+from benchmarks.domains.transfer_learning.sigmoid.sigmoid_partially_inverted_noisy_tl import (
+    sigmoid_partially_inverted_noisy_tl_benchmark,
+)
 from benchmarks.domains.synthetic_2C1D_1C import synthetic_2C1D_1C_benchmark
 from benchmarks.domains.transfer_learning.aryl_halides.sou_CT_I_tar_BM import (
     aryl_halide_CT_I_BM_tl_benchmark,
@@ -72,6 +78,8 @@ BENCHMARKS: list[Benchmark] = [
     easom_tl_47_negate_noise5_benchmark,
     hartmann_tl_3_20_15_benchmark,
     michalewicz_tl_continuous_benchmark,
+    sigmoid_partially_inverted_tl_benchmark,
+    sigmoid_partially_inverted_noisy_tl_benchmark,
     # Transfer-Learning Regression Benchmarks
     direct_arylation_temperature_tl_regr_benchmark,
     aryl_halide_CT_IM_tl_regr_benchmark,
