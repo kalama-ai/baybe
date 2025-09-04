@@ -42,6 +42,12 @@ from benchmarks.domains.regression.hartmann.hartmann_fully_inverted_tl_regr impo
 from benchmarks.domains.regression.michalewicz.michalewicz_tl_continuous_regr import (
     michalewicz_tl_continuous_regr_benchmark,
 )
+from benchmarks.domains.regression.sigmoid.sigmoid_partially_inverted_tl_regr import (
+    sigmoid_partially_inverted_tl_regr_benchmark,
+)
+from benchmarks.domains.regression.sigmoid.sigmoid_partially_inverted_noisy_tl_regr import (
+    sigmoid_partially_inverted_noisy_tl_regr_benchmark,
+)
 from benchmarks.domains.transfer_learning.sigmoid.sigmoid_partially_inverted_tl import (
     sigmoid_partially_inverted_tl_benchmark,
 )       
@@ -112,6 +118,8 @@ BENCHMARKS: list[Benchmark] = [
     hartmann_partially_inverted_tl_regr_benchmark,
     hartmann_fully_inverted_tl_regr_benchmark,
     michalewicz_tl_continuous_regr_benchmark,
+    sigmoid_partially_inverted_tl_regr_benchmark,
+    sigmoid_partially_inverted_noisy_tl_regr_benchmark,
 ]
 
 
