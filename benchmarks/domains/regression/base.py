@@ -22,6 +22,11 @@ from baybe.objectives import SingleTargetObjective
 from baybe.parameters import TaskParameter
 from baybe.searchspace import SearchSpace
 from baybe.surrogates.gaussian_process.core import GaussianProcessSurrogate
+from baybe.surrogates.source_prior import SourcePriorGaussianProcessSurrogate
+from baybe.surrogates.transfergpbo import (
+    MHGPGaussianProcessSurrogate,
+    SHGPGaussianProcessSurrogate,
+)
 from benchmarks.definition import TransferLearningRegressionBenchmarkSettings
 
 
@@ -104,7 +109,9 @@ def spearman_rho_score(x: np.ndarray, y: np.ndarray, /) -> float:
 
 
 TL_MODELS = {
-    "index_kernel": GaussianProcessSurrogate,
+    "source_prior": SourcePriorGaussianProcessSurrogate,
+    "mhgp": MHGPGaussianProcessSurrogate,
+    "shgp": SHGPGaussianProcessSurrogate,
 }
 
 
