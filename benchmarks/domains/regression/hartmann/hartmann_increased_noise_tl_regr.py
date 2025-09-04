@@ -1,7 +1,7 @@
-"""TL regression benchmark for Hartmann function in 3D with 20 points per dimension.
+"""TL regression benchmark for Hartmann function with increased noise.
 
 Target task: Standard 3D Hartmann function
-Source task: 3D Hartmann function with noise (std=0.15)
+Source task: 3D Hartmann function with very high noise (std=5)
 """
 
 from __future__ import annotations
@@ -22,24 +22,24 @@ from benchmarks.domains.transfer_learning.hartmann.base import (
 )
 
 
-def hartmann_tl_3_20_15_regr(
+def hartmann_increased_noise_tl_regr(
     settings: TransferLearningRegressionBenchmarkSettings,
 ) -> pd.DataFrame:
     """Benchmark function for comparing regression performance of GP vs TL models.
 
     This benchmark uses different versions of the 3D Hartmann function as tasks:
     • Target task: Standard 3D Hartmann function
-    • Source task: 3D Hartmann function with added noise (std=0.15)
+    • Source task: 3D Hartmann function with very high noise (std=5)
 
     Uses the same configuration as the original convergence benchmark:
-    • 20 points per dimension 
+    • 5 points per dimension 
     • Bounds: [0, 1] for all three dimensions (x0, x1, x2)
     • Discrete grid search space
     • Hartmann function (minimization objective)
 
     Key characteristics:
     • Parameters:
-      - x0, x1, x2: Numerical discrete (20 points each from 0 to 1)
+      - x0, x1, x2: Numerical discrete (5 points each from 0 to 1)
       - Function: Task parameter (Target_Function, Source_Function)
     • Target: Hartmann function output (continuous)
     • Objective: Minimization (standard Hartmann)
@@ -55,9 +55,9 @@ def hartmann_tl_3_20_15_regr(
         settings=settings,
         data_loader=lambda: load_data(
             target_function_factory=lambda: Hartmann(dim=3),
-            source_function_factory=lambda: Hartmann(dim=3, noise_std=0.15),
+            source_function_factory=lambda: Hartmann(dim=3, noise_std=5),
             bounds=np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]),
-            points_per_dim=20,
+            points_per_dim=5,
             random_seed=settings.random_seed,
         ),
         searchspace_factory=make_searchspace,
@@ -67,14 +67,14 @@ def hartmann_tl_3_20_15_regr(
 
 # Define the benchmark settings
 benchmark_config = TransferLearningRegressionBenchmarkSettings(
-    n_mc_iterations=75,
-    max_n_train_points=25,
-    source_fractions=(0.01, 0.05, 0.1),
+    n_mc_iterations=50,
+    max_n_train_points=10,
+    source_fractions=(0.1,),
     noise_std=0.0,  # Noise is already built into source function
 )
 
 # Create the benchmark
-hartmann_tl_3_20_15_regr_benchmark = TransferLearningRegressionBenchmark(
-    function=hartmann_tl_3_20_15_regr, 
+hartmann_increased_noise_tl_regr_benchmark = TransferLearningRegressionBenchmark(
+    function=hartmann_increased_noise_tl_regr, 
     settings=benchmark_config
 )
