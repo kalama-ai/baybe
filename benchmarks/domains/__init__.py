@@ -58,6 +58,15 @@ from benchmarks.domains.transfer_learning.easom.easom_tl_47_negate_noise5 import
 from benchmarks.domains.transfer_learning.hartmann.hartmann_tl_3_20_15 import (
     hartmann_tl_3_20_15_benchmark,
 )
+from benchmarks.domains.transfer_learning.hartmann.hartmann_increased_noise_tl import (
+    hartmann_increased_noise_tl_benchmark,
+)
+from benchmarks.domains.transfer_learning.hartmann.hartmann_partially_inverted_tl import (
+    hartmann_partially_inverted_tl_benchmark,
+)
+from benchmarks.domains.transfer_learning.hartmann.hartmann_fully_inverted_tl import (
+    hartmann_fully_inverted_tl_benchmark,
+)
 from benchmarks.domains.transfer_learning.michalewicz.michalewicz_tl_continuous import (
     michalewicz_tl_continuous_benchmark,
 )
@@ -77,6 +86,9 @@ BENCHMARKS: list[Benchmark] = [
     direct_arylation_tl_temperature_benchmark,
     easom_tl_47_negate_noise5_benchmark,
     hartmann_tl_3_20_15_benchmark,
+    hartmann_increased_noise_tl_benchmark,
+    hartmann_partially_inverted_tl_benchmark,
+    hartmann_fully_inverted_tl_benchmark,
     michalewicz_tl_continuous_benchmark,
     sigmoid_partially_inverted_tl_benchmark,
     sigmoid_partially_inverted_noisy_tl_benchmark,
