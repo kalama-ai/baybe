@@ -1,6 +1,7 @@
-"""Benchmark on Direct Arylation data for transfer learning.
+"""Direct Arylation benchmark with Option 2: simulate_pretrained_scenarios.
 
-This benchmark uses one temperature as source and another temperature as target.
+This shows how the temperature_tl.py benchmark would look using Option 2 instead of Option 1.
+Compare this to the current implementation to see the code reduction.
 """
 
 from __future__ import annotations
@@ -36,9 +37,10 @@ from benchmarks.definition import (
 )
 from benchmarks.definition.convergence import ConvergenceBenchmark
 
+from simulate_pretrained_scenarios import simulate_pretrained_scenarios
+
 TARGET = "105"
-# TODO: Currently SourcePrior GP only supports one source.
-SOURCES = ["90"]  # , "120"]
+SOURCES = ["90"]
 
 
 def load_data() -> pd.DataFrame:
@@ -87,13 +89,7 @@ def make_objective() -> SingleTargetObjective:
 
 
 def make_lookup(data: pd.DataFrame) -> pd.DataFrame:
-    """Create the lookup for the benchmark.
-
-    Note that we filter the data to only include the target tasks.
-    Without the filtering, there would be multiple entries for the same parameter
-    configuration. Since this might yield issues for the non-transfer learning
-    campaigns, we filter the data to only include the target tasks.
-    """
+    """Create the lookup for the benchmark."""
     return data[data["Temp_C"] == TARGET]
 
 
@@ -105,46 +101,20 @@ def make_initial_data(data: pd.DataFrame) -> pd.DataFrame:
 def direct_arylation_tl_temperature(
     settings: ConvergenceBenchmarkSettings,
 ) -> pd.DataFrame:
-    """Benchmark on Direct Arylation data for transfer learning.
-
-    Key characteristics:
-    • Uses one temperature as source (90°C and 120°C) and another as target (105°C)
-    • Compares transfer learning vs. non-transfer learning approaches
-    • Tests varying amounts of source data:
-      - 1% of source data
-      - 10% of source data
-      - 20% of source data
-    • Includes baseline with no transfer learning (0% source data)
-    • Parameters:
-      - Solvent: Substance with RDKIT2DDESCRIPTORS encoding
-      - Base: Substance with RDKIT2DDESCRIPTORS encoding
-      - Ligand: Substance with RDKIT2DDESCRIPTORS encoding
-      - Concentration: Numerical discrete
-      - Temp_C: Task parameter (90°C, 105°C, 120°C)
-    • Target: Reaction yield (continuous)
-    • Objective: Maximization
-
-    Args:
-        settings: Configuration settings for the convergence benchmark
-
-    Returns:
-        DataFrame containing benchmark results for all test cases
+    """Direct Arylation benchmark using Option 2: simulate_pretrained_scenarios.
+    
+    This demonstrates how much cleaner the code becomes compared to Option 1.
     """
     data = load_data()
 
-    searchspace = make_searchspace(
-        data=data,
-        use_task_parameter=True,
-    )
-    searchspace_nontl = make_searchspace(
-        data=data,
-        use_task_parameter=False,
-    )
+    searchspace = make_searchspace(data=data, use_task_parameter=True)
+    searchspace_nontl = make_searchspace(data=data, use_task_parameter=False)
 
     lookup = make_lookup(data)
     initial_data = make_initial_data(data)
     objective = make_objective()
 
+    # Create regular TL campaigns (same as before)
     index_kernel_campaign = Campaign(
         searchspace=searchspace,
         objective=objective,
@@ -187,6 +157,7 @@ def direct_arylation_tl_temperature(
 
     percentages = [0.01, 0.1, 0.2]
 
+    # Create initial data samples (same as before)
     initial_data_samples = {}
     with temporary_seed(settings.random_seed):
         for p in percentages:
@@ -195,15 +166,17 @@ def direct_arylation_tl_temperature(
             ]
 
     results = []
+    
+    # Run regular TL campaigns (same as before)
     for p in percentages:
         results.append(
             simulate_scenarios(
                 {
-                    f"{int(100 * p)}_index_kernel": index_kernel_campaign, # Source Fraction p, Model GP Index Kernel
-                    f"{int(100 * p)}_source_prior": source_prior_campaign, # Source Fraction p, Model Source Prior
-                    f"{int(100 * p)}_mhgp": mhgp_campaign, # Source Fraction p, Model MHGP
-                    f"{int(100 * p)}_shgp": shgp_campaign, # Source Fraction p, Model SHGP
-                    f"{int(100 * p)}_naive": non_tl_campaign, # Source Fraction p, Model vanilla GP
+                    f"{int(100 * p)}_index_kernel": index_kernel_campaign,
+                    f"{int(100 * p)}_source_prior": source_prior_campaign,
+                    f"{int(100 * p)}_mhgp": mhgp_campaign,
+                    f"{int(100 * p)}_shgp": shgp_campaign,
+                    f"{int(100 * p)}_naive": non_tl_campaign,
                 },
                 lookup,
                 initial_data=initial_data_samples[p],
@@ -213,10 +186,47 @@ def direct_arylation_tl_temperature(
                 random_seed=settings.random_seed,
             )
         )
+
+    # Pretrain SOurcePriorGP, use learned prior in camapgin without task parameter
+    for p in percentages:
+        print(f"Creating wrapped SourcePrior campaign for {int(100*p)}% source data...")
+        
+        # Template campaign for wrapped model (task-parameter-free)
+        wrapped_template = Campaign(
+            searchspace=searchspace_nontl,  # No task parameter!
+            objective=objective,
+            recommender=TwoPhaseMetaRecommender(
+                initial_recommender=RandomRecommender(),
+                recommender=BotorchRecommender(
+                    surrogate_model=None  # Will be replaced with pre-trained model
+                ),
+            ),
+        )
+        
+        # Use Option 2: Much cleaner than manual MC loop!
+        wrapped_result = simulate_pretrained_scenarios(
+            {f"{int(100 * p)}_source_prior_wrapped": wrapped_template},
+            lookup,
+            # Pre-training configuration
+            pretrain_model_factory=lambda: SourcePriorGaussianProcessSurrogate(),
+            pretrain_searchspace=searchspace,  # With task parameter for pre-training
+            pretrain_objective=objective,
+            # Standard parameters
+            initial_data=initial_data_samples[p],
+            batch_size=settings.batch_size,
+            n_doe_iterations=settings.n_doe_iterations,
+            n_mc_iterations=settings.n_mc_iterations,
+            random_seed=settings.random_seed,
+            impute_mode="error",
+        )
+        
+        results.append(wrapped_result)
+
+    # Add baseline campaigns (same as before)
     results.append(
         simulate_scenarios(
-            {"0": index_kernel_campaign, # Source Fraction 0, model GP Index Kernel - full searchspace
-             "0_naive": non_tl_campaign}, # Source Fraction 0, Model vanilla GP - search space without TaskParameter
+            {"0": index_kernel_campaign,
+             "0_naive": non_tl_campaign},
             lookup,
             batch_size=settings.batch_size,
             n_doe_iterations=settings.n_doe_iterations,
@@ -225,13 +235,13 @@ def direct_arylation_tl_temperature(
             random_seed=settings.random_seed,
         )
     )
+    
     return pd.concat(results)
-
 
 benchmark_config = ConvergenceBenchmarkSettings(
     batch_size=2,
-    n_doe_iterations=20,
-    n_mc_iterations=55,
+    n_doe_iterations=20,#20,
+    n_mc_iterations=55,#55,
 )
 
 direct_arylation_tl_temperature_benchmark = ConvergenceBenchmark(
