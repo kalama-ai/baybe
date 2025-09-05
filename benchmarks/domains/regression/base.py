@@ -235,8 +235,10 @@ def run_tl_regression_benchmark(
 
                 # Collect results for current training scenario
                 scenario_results: list[dict[str, Any]] = []
+
+                # Evaluate naive baselines and transfer learning models
                 scenario_results.extend(
-                    _evaluate_naive_models(
+                    _evaluate_models_no_source(
                         target_train,
                         target_test,
                         vanilla_searchspace,
@@ -245,11 +247,12 @@ def run_tl_regression_benchmark(
                     )
                 )
                 scenario_results.extend(
-                    _evaluate_transfer_learning_models(
+                    _evaluate_models_with_source(
                         source_subset,
                         target_train,
                         target_test,
                         tl_searchspace,
+                        vanilla_searchspace,
                         objective,
                         fraction_source,
                     )
@@ -353,7 +356,7 @@ def _evaluate_model(
     return result
 
 
-def _evaluate_naive_models(
+def _evaluate_models_no_source(
     target_train: pd.DataFrame,
     target_test: pd.DataFrame,
     vanilla_searchspace: SearchSpace,
@@ -402,11 +405,12 @@ def _evaluate_naive_models(
     return results
 
 
-def _evaluate_transfer_learning_models(
+def _evaluate_models_with_source(
     source_data: pd.DataFrame,
     target_train: pd.DataFrame,
     target_test: pd.DataFrame,
     tl_searchspace: SearchSpace,
+    vanilla_searchspace: SearchSpace,
     objective: SingleTargetObjective,
     fraction_source: float,
 ) -> list[dict[str, Any]]:
@@ -439,6 +443,17 @@ def _evaluate_transfer_learning_models(
                 tl_searchspace,
                 objective,
                 scenario_name,
+            )
+        )
+    
+    results.append(
+            _evaluate_model(
+                GaussianProcessSurrogate(),
+                combined_data,
+                target_test,
+                vanilla_searchspace,
+                objective,
+                f"{int(100 * fraction_source)}_naive"
             )
         )
 
