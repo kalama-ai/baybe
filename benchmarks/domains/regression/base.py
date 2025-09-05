@@ -445,17 +445,17 @@ def _evaluate_models_with_source(
                 scenario_name,
             )
         )
-    
+
     results.append(
-            _evaluate_model(
-                GaussianProcessSurrogate(),
-                combined_data,
-                target_test,
-                vanilla_searchspace,
-                objective,
-                f"{int(100 * fraction_source)}_naive"
-            )
+        _evaluate_model(
+            GaussianProcessSurrogate(),
+            combined_data,
+            target_test,
+            vanilla_searchspace,
+            objective,
+            f"{int(100 * fraction_source)}_naive",
         )
+    )
 
     return results
 
