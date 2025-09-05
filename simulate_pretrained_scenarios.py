@@ -14,6 +14,11 @@ import pandas as pd
 
 from baybe.campaign import Campaign
 from baybe.simulation import simulate_scenarios
+from baybe.surrogates.source_prior import SourcePriorGaussianProcessSurrogate
+from baybe.surrogates.botorchwrapper import PretrainedSingleTaskGPSurrogate
+from baybe.parameters import TaskParameter
+from baybe.recommenders import BotorchRecommender, TwoPhaseMetaRecommender, RandomRecommender
+from baybe.searchspace import SearchSpace
 
 if TYPE_CHECKING:
     from baybe.objectives import Objective
@@ -116,27 +121,34 @@ def simulate_pretrained_scenarios(
             
             training_data = initial_data[mc_iteration]
             
-            # Create and pre-train model
-            pretrained_model = pretrain_model_factory()
-            pretrained_model.fit(
+            # Create and pre-train model (like temperature_tl_old.py)
+            source_prior_surrogate = pretrain_model_factory()
+            source_prior_surrogate.fit(
                 searchspace=pretrain_searchspace,
                 objective=pretrain_objective,
                 measurements=training_data
             )
             
-            # Create campaign copy with pre-trained model
-            campaign_copy = deepcopy(template_campaign)
+            # Extract the target GP and wrap it (like temperature_tl_old.py)
+            target_gp = source_prior_surrogate._target_gp
+            wrapped_surrogate = PretrainedSingleTaskGPSurrogate.from_botorch_model(target_gp)
             
-            # Replace the surrogate model in the recommender
-            # Navigate through the recommender structure to find and replace the surrogate
-            _replace_surrogate_in_recommender(campaign_copy.recommender, pretrained_model)
+            # Create reduced searchspace without task parameter
+            reduced_searchspace = _create_reduced_searchspace(pretrain_searchspace)
+            
+            # Create new campaign with wrapped model (like temperature_tl_old.py)
+            wrapped_campaign = Campaign(
+                searchspace=reduced_searchspace,
+                objective=pretrain_objective,
+                recommender=_create_wrapped_recommender(template_campaign.recommender, wrapped_surrogate)
+            )
             
             # Run single MC iteration 
             mc_seed = None if random_seed is None else random_seed + mc_iteration
             
             single_result = simulate_scenarios(
-                scenarios={scenario_name: campaign_copy},
-                lookup=lookup,
+                {scenario_name: wrapped_campaign},
+                lookup,
                 batch_size=batch_size,
                 n_doe_iterations=n_doe_iterations,
                 # No initial_data - model is pre-trained
@@ -165,20 +177,45 @@ def simulate_pretrained_scenarios(
         return pd.DataFrame()
 
 
-def _replace_surrogate_in_recommender(recommender, new_surrogate):
-    """Helper function to replace surrogate model in recommender hierarchy.
+def _create_reduced_searchspace(full_searchspace: SearchSpace) -> SearchSpace:
+    """Create reduced searchspace by removing TaskParameter instances."""
+    # Get all parameters from the search space
+    parameters = list(full_searchspace.parameters)
     
-    This navigates through BotorchRecommender, TwoPhaseMetaRecommender, etc.
-    to find and replace the surrogate_model attribute.
-    """
-    # Handle TwoPhaseMetaRecommender
-    if hasattr(recommender, 'recommender'):
-        _replace_surrogate_in_recommender(recommender.recommender, new_surrogate)
+    # Filter out TaskParameter instances
+    filtered_parameters = [
+        param for param in parameters if not isinstance(param, TaskParameter)
+    ]
     
-    # Handle BotorchRecommender  
-    if hasattr(recommender, 'surrogate_model'):
-        recommender.surrogate_model = new_surrogate
-        
-    # Handle other recommender types that might have surrogate models
-    if hasattr(recommender, 'initial_recommender'):
-        _replace_surrogate_in_recommender(recommender.initial_recommender, new_surrogate)
+    # If no TaskParameter was found, return the original searchspace
+    if len(filtered_parameters) == len(parameters):
+        return full_searchspace
+    
+    # Create new SearchSpace with filtered parameters and constraints
+    return SearchSpace.from_product(
+        parameters=filtered_parameters,
+        constraints=list(full_searchspace.constraints),
+    )
+
+
+def _create_wrapped_recommender(template_recommender, wrapped_surrogate):
+    """Create new recommender with wrapped surrogate, preserving structure."""
+    # Handle TwoPhaseMetaRecommender (like in temperature_tl_old.py)
+    if hasattr(template_recommender, 'initial_recommender'):
+        return TwoPhaseMetaRecommender(
+            initial_recommender=RandomRecommender(),
+            recommender=BotorchRecommender(
+                surrogate_model=wrapped_surrogate
+            ),
+        )
+    # Handle direct BotorchRecommender
+    elif hasattr(template_recommender, '_surrogate_model'):
+        return BotorchRecommender(surrogate_model=wrapped_surrogate)
+    else:
+        # Fallback: create TwoPhase structure
+        return TwoPhaseMetaRecommender(
+            initial_recommender=RandomRecommender(),
+            recommender=BotorchRecommender(
+                surrogate_model=wrapped_surrogate
+            ),
+        )
