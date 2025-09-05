@@ -50,6 +50,8 @@ def parse_scenario(scenario):
             return source_percent, "SHGP", False
         elif model_name == "source_prior":
             return source_percent, "SourceGP", False
+        elif model_name == "source_prior_wrapped":
+            return source_percent, "SourceGP_Wrapped", False
         else:
             return source_percent, f"TL_{model_name}", False
     else:
@@ -405,6 +407,7 @@ def visualize_tl_convergence_per_source(json_file_path):
         'MHGP': 'MHGP', 
         'SHGP': 'SHGP',
         'SourceGP': 'SourcePrior',
+        'SourceGP_Wrapped': 'SourcePrior (Wrapped)',
         'GP_reduced': 'GP (reduced)'
     }
     

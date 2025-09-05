@@ -63,6 +63,9 @@ def clean_scenario_name(scenario_name):
     elif "_source_prior" in scenario_name:
         fraction = scenario_name.split("_")[0]
         return f"SourcePrior {fraction}%"
+    elif "_naive" in scenario_name:
+        fraction = scenario_name.split("_")[0]
+        return f"NaiveGP {fraction}%"
     else:
         return scenario_name
 
@@ -159,6 +162,8 @@ def visualize_tl_regression_per_source(json_file_path):
             tl_model_types.add('shgp')
         elif '_source_prior' in scenario:
             tl_model_types.add('source_prior')
+        elif '_naive' in scenario:
+            tl_model_types.add('naive')
         # Add more patterns as new models are introduced
     
     # Assign colors to detected TL model types
@@ -318,7 +323,8 @@ def visualize_tl_regression_per_source(json_file_path):
         'index_kernel': 'GPIndex',
         'mhgp': 'MHGP', 
         'shgp': 'SHGP',
-        'source_prior': 'SourcePrior'
+        'source_prior': 'SourcePrior',
+        'naive': 'NaiveGP'
         # Add more mappings as new models are introduced
     }
     

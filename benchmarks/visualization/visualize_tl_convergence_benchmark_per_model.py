@@ -50,6 +50,8 @@ def parse_scenario(scenario):
             return source_percent, "SHGP", False
         elif model_name == "source_prior":
             return source_percent, "SourceGP", False
+        elif model_name == "source_prior_wrapped":
+            return source_percent, "SourceGP_Wrapped", False
         else:
             return source_percent, f"TL_{model_name}", False
     else:
@@ -96,7 +98,7 @@ def visualize_tl_convergence_per_model(json_file_path):
             model_data[model_name][source_pct] = scenario
 
     # Define the desired order of models for visualization
-    model_order = ["GPIndex", "MHGP", "SHGP", "SourceGP", "GP_reduced"]
+    model_order = ["GPIndex", "MHGP", "SHGP", "SourceGP", "SourceGP_Wrapped", "GP_reduced"]
     available_models = [model for model in model_order if model in model_data]
     
     print(f"Available models: {available_models}")
@@ -380,6 +382,8 @@ def visualize_tl_convergence_per_model(json_file_path):
         # Set title and customize after plotting
         if model_name == "GP_reduced":
             model_title = "GP (reduced searchspace)"
+        elif model_name == "SourceGP_Wrapped":
+            model_title = "SourcePrior (Wrapped)"
         else:
             model_title = model_name
             
