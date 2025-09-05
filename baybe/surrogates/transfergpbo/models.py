@@ -158,6 +158,10 @@ class MHGPModel(Model):
         # Store task configuration
         self.task_feature = task_feature
         self.target_task = target_task
+        
+        # CRITICAL FIX: Clear previous source GPs to avoid accumulation
+        self.source_gps.clear()
+        
         # Extract source and target data
         source_data, _ = self._extract_task_data(X, Y, task_feature, target_task)
 
@@ -354,8 +358,16 @@ class MHGPModel(Model):
                     X_task = X_features_batch[task_mask]
 
                     # Prediction from source GP
+                    # Fix: Map task_id to correct stack position
+                    if task_id.item() == self.target_task:
+                        # For target task, predict from entire stack (source + target GPs)
+                        stack_position = len(self.source_gps)
+                    else:
+                        # For source tasks, use task_id as stack position (assumes source task IDs are ordered)
+                        stack_position = task_id.item()
+                    
                     task_mean, task_cov = self._predict_from_stack(
-                        X_task, task_id.item()
+                        X_task, stack_position
                     )
 
                     # Store results
@@ -627,6 +639,7 @@ class SHGPModel(MHGPModel):
         Returns:
             Tuple of (mean, covariance) predictions with uncertainty propagation.
         """
+        
         device = X.device
         dtype = X.dtype
         n_points = X.shape[0]
