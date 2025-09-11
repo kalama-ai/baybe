@@ -85,6 +85,86 @@ from benchmarks.domains.transfer_learning.hartmann.hartmann_fully_inverted_tl im
 from benchmarks.domains.transfer_learning.michalewicz.michalewicz_tl_continuous import (
     michalewicz_tl_continuous_benchmark,
 )
+# Forrester Transfer Learning Convergence Benchmarks
+from benchmarks.domains.transfer_learning.forrester.forrester_noise_05 import (
+    forrester_noise_05_benchmark,
+)
+from benchmarks.domains.transfer_learning.forrester.forrester_noise_1 import (
+    forrester_noise_1_benchmark,
+)
+from benchmarks.domains.transfer_learning.forrester.forrester_noise_2 import (
+    forrester_noise_2_benchmark,
+)
+from benchmarks.domains.transfer_learning.forrester.forrester_amplified_noise_05 import (
+    forrester_amplified_noise_05_benchmark,
+)
+from benchmarks.domains.transfer_learning.forrester.forrester_amplified_noise_2 import (
+    forrester_amplified_noise_2_benchmark,
+)
+from benchmarks.domains.transfer_learning.forrester.forrester_low_fid_noise_02 import (
+    forrester_low_fid_noise_02_benchmark,
+)
+from benchmarks.domains.transfer_learning.forrester.forrester_low_fid_noise_05 import (
+    forrester_low_fid_noise_05_benchmark,
+)
+from benchmarks.domains.transfer_learning.forrester.forrester_low_fid_noise_2 import (
+    forrester_low_fid_noise_2_benchmark,
+)
+from benchmarks.domains.transfer_learning.forrester.forrester_inverted_noise_05 import (
+    forrester_inverted_noise_05_benchmark,
+)
+from benchmarks.domains.transfer_learning.forrester.forrester_neg_shift_015_noise_05 import (
+    forrester_neg_shift_015_noise_05_benchmark,
+)
+from benchmarks.domains.transfer_learning.forrester.forrester_neg_shift_01_noise_05 import (
+    forrester_neg_shift_01_noise_05_benchmark,
+)
+from benchmarks.domains.transfer_learning.forrester.forrester_pos_shift_015_noise_05 import (
+    forrester_pos_shift_015_noise_05_benchmark,
+)
+from benchmarks.domains.transfer_learning.forrester.forrester_pos_shift_01_noise_05 import (
+    forrester_pos_shift_01_noise_05_benchmark,
+)
+# Forrester Regression Benchmarks
+from benchmarks.domains.regression.forrester.forrester_noise_05_regr import (
+    forrester_noise_05_regr_benchmark,
+)
+from benchmarks.domains.regression.forrester.forrester_noise_1_regr import (
+    forrester_noise_1_regr_benchmark,
+)
+from benchmarks.domains.regression.forrester.forrester_noise_2_regr import (
+    forrester_noise_2_regr_benchmark,
+)
+from benchmarks.domains.regression.forrester.forrester_amplified_noise_05_regr import (
+    forrester_amplified_noise_05_regr_benchmark,
+)
+from benchmarks.domains.regression.forrester.forrester_amplified_noise_2_regr import (
+    forrester_amplified_noise_2_regr_benchmark,
+)
+from benchmarks.domains.regression.forrester.forrester_low_fid_noise_02_regr import (
+    forrester_low_fid_noise_02_regr_benchmark,
+)
+from benchmarks.domains.regression.forrester.forrester_low_fid_noise_05_regr import (
+    forrester_low_fid_noise_05_regr_benchmark,
+)
+from benchmarks.domains.regression.forrester.forrester_low_fid_noise_2_regr import (
+    forrester_low_fid_noise_2_regr_benchmark,
+)
+from benchmarks.domains.regression.forrester.forrester_inverted_noise_05_regr import (
+    forrester_inverted_noise_05_regr_benchmark,
+)
+from benchmarks.domains.regression.forrester.forrester_neg_shift_015_noise_05_regr import (
+    forrester_neg_shift_015_noise_05_regr_benchmark,
+)
+from benchmarks.domains.regression.forrester.forrester_neg_shift_01_noise_05_regr import (
+    forrester_neg_shift_01_noise_05_regr_benchmark,
+)
+from benchmarks.domains.regression.forrester.forrester_pos_shift_015_noise_05_regr import (
+    forrester_pos_shift_015_noise_05_regr_benchmark,
+)
+from benchmarks.domains.regression.forrester.forrester_pos_shift_01_noise_05_regr import (
+    forrester_pos_shift_01_noise_05_regr_benchmark,
+)
 
 BENCHMARKS: list[Benchmark] = [
     # Convergence Benchmarks
@@ -107,6 +187,20 @@ BENCHMARKS: list[Benchmark] = [
     michalewicz_tl_continuous_benchmark,
     sigmoid_partially_inverted_tl_benchmark,
     sigmoid_partially_inverted_noisy_tl_benchmark,
+    # Forrester Convergence Benchmarks
+    forrester_noise_05_benchmark,
+    forrester_noise_1_benchmark,
+    forrester_noise_2_benchmark,
+    forrester_amplified_noise_05_benchmark,
+    forrester_amplified_noise_2_benchmark,
+    forrester_low_fid_noise_02_benchmark,
+    forrester_low_fid_noise_05_benchmark,
+    forrester_low_fid_noise_2_benchmark,
+    forrester_inverted_noise_05_benchmark,
+    forrester_neg_shift_015_noise_05_benchmark,
+    forrester_neg_shift_01_noise_05_benchmark,
+    forrester_pos_shift_015_noise_05_benchmark,
+    forrester_pos_shift_01_noise_05_benchmark,
     # Transfer-Learning Regression Benchmarks
     direct_arylation_temperature_tl_regr_benchmark,
     aryl_halide_CT_IM_tl_regr_benchmark,
@@ -120,6 +214,20 @@ BENCHMARKS: list[Benchmark] = [
     michalewicz_tl_continuous_regr_benchmark,
     sigmoid_partially_inverted_tl_regr_benchmark,
     sigmoid_partially_inverted_noisy_tl_regr_benchmark,
+    # Forrester Regression Benchmarks
+    forrester_noise_05_regr_benchmark,
+    forrester_noise_1_regr_benchmark,
+    forrester_noise_2_regr_benchmark,
+    forrester_amplified_noise_05_regr_benchmark,
+    forrester_amplified_noise_2_regr_benchmark,
+    forrester_low_fid_noise_02_regr_benchmark,
+    forrester_low_fid_noise_05_regr_benchmark,
+    forrester_low_fid_noise_2_regr_benchmark,
+    forrester_inverted_noise_05_regr_benchmark,
+    forrester_neg_shift_015_noise_05_regr_benchmark,
+    forrester_neg_shift_01_noise_05_regr_benchmark,
+    forrester_pos_shift_015_noise_05_regr_benchmark,
+    forrester_pos_shift_01_noise_05_regr_benchmark,
 ]
 
 

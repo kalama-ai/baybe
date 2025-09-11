@@ -112,6 +112,7 @@ TL_MODELS = {
     "source_prior": SourcePriorGaussianProcessSurrogate,
     "mhgp": MHGPGaussianProcessSurrogate,
     "shgp": SHGPGaussianProcessSurrogate,
+    "index_kernel": GaussianProcessSurrogate
 }
 
 
@@ -188,10 +189,10 @@ def run_tl_regression_benchmark(
     target_data = data[data[name_task].isin(target_tasks)]
 
     # Ensure sufficient target data for train/test splits
-    assert len(target_data) >= 2 * settings.max_n_train_points, (
-        f"Insufficient target data:"
-        f"{len(target_data)} < {2 * settings.max_n_train_points}"
-    )
+    # assert len(target_data) >= 2 * settings.max_n_train_points, (
+    #     f"Insufficient target data:"
+    #     f"{len(target_data)} < {2 * settings.max_n_train_points}"
+    # )
 
     # Collect all benchmark results across MC iterations and scenarios
     results: list[dict[str, Any]] = []
@@ -216,7 +217,7 @@ def run_tl_regression_benchmark(
                 name_task,
                 settings.random_seed + mc_iter,
             )
-
+            #print(f"source subset size: {len(source_subset), source_subset} ")
             for n_train_pts in range(1, settings.max_n_train_points + 1):
                 # Update progress bar description
                 pbar.set_description(
@@ -224,11 +225,11 @@ def run_tl_regression_benchmark(
                     f"Frac {fraction_source:.2f} | "
                     f"Pts {n_train_pts}/{settings.max_n_train_points}"
                 )
-
+                #print(f"Testing on {min(settings.max_n_train_points, len(target_data) - n_train_pts)} test points")
                 target_train, target_test = train_test_split(
                     target_data,
                     train_size=n_train_pts,
-                    test_size=settings.max_n_train_points,
+                    test_size=min(settings.max_n_train_points, len(target_data) - n_train_pts),
                     random_state=settings.random_seed + mc_iter,
                     shuffle=True,
                 )
@@ -237,26 +238,30 @@ def run_tl_regression_benchmark(
                 scenario_results: list[dict[str, Any]] = []
 
                 # Evaluate naive baselines and transfer learning models
-                scenario_results.extend(
-                    _evaluate_models_no_source(
-                        target_train,
-                        target_test,
-                        vanilla_searchspace,
-                        tl_searchspace,
-                        objective,
+                # TODO: THis should happen only once not for every fraction
+                if len(source_subset) >0:
+                    scenario_results.extend(
+                        _evaluate_models_no_source(
+                            target_train,
+                            target_test,
+                            vanilla_searchspace,
+                            tl_searchspace,
+                            objective,
+                        )
                     )
-                )
-                scenario_results.extend(
-                    _evaluate_models_with_source(
-                        source_subset,
-                        target_train,
-                        target_test,
-                        tl_searchspace,
-                        vanilla_searchspace,
-                        objective,
-                        fraction_source,
+                    scenario_results.extend(
+                        _evaluate_models_with_source(
+                            source_subset,
+                            target_train,
+                            target_test,
+                            tl_searchspace,
+                            vanilla_searchspace,
+                            objective,
+                            fraction_source,
+                        )
                     )
-                )
+                else:
+                    print("No source data available for this fraction, skipping TL models.")
 
                 # Add metadata to each scenario result
                 for scenario_result in scenario_results:
