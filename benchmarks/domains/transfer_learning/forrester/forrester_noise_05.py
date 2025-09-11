@@ -1,0 +1,61 @@
+"""Forrester transfer learning benchmark with noise level 0.5 source.
+
+This benchmark tests transfer learning from a noisy version of the original
+Forrester function to the clean target function:
+• Target: Clean original Forrester function (a=1, b=0, c=0, noise=0)
+• Source: Original Forrester function with noise_std=0.5
+• 100 source points in [0,1] domain
+"""
+
+from __future__ import annotations
+
+import pandas as pd
+
+from benchmarks.definition import (
+    ConvergenceBenchmark,
+    ConvergenceBenchmarkSettings,
+)
+from benchmarks.domains.transfer_learning.forrester.base import (
+    TARGET_CONFIG,
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_N_DOE_ITERATIONS,
+    DEFAULT_N_MC_ITERATIONS,
+    forrester_tl_benchmark,
+)
+
+
+def forrester_noise_05(settings: ConvergenceBenchmarkSettings) -> pd.DataFrame:
+    """Forrester TL benchmark with noise level 0.5 source function.
+
+    This benchmark evaluates transfer learning performance when the source task
+    has the same underlying function as the target but with added noise.
+    Tests the ability of TL models to filter noise and transfer clean patterns.
+
+    Args:
+        settings: Configuration settings for the convergence benchmark.
+
+    Returns:
+        DataFrame containing benchmark results across source data fractions.
+    """
+    source_config = {**TARGET_CONFIG, "output_noise": 0.5}
+    
+    return forrester_tl_benchmark(
+        settings=settings,
+        target_config=TARGET_CONFIG,
+        source_config=source_config,
+    )
+
+
+# Benchmark configuration
+benchmark_config = ConvergenceBenchmarkSettings(
+    batch_size=DEFAULT_BATCH_SIZE,
+    n_doe_iterations=DEFAULT_N_DOE_ITERATIONS,
+    n_mc_iterations=DEFAULT_N_MC_ITERATIONS,
+)
+
+# Benchmark instance
+forrester_noise_05_benchmark = ConvergenceBenchmark(
+    function=forrester_noise_05,
+    optimal_target_values={"Target": 6.02074},  # Approximate Forrester maximum
+    settings=benchmark_config,
+)
