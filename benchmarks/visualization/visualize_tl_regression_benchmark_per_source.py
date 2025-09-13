@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 
+from benchmarks.visualization.scenario_parsing import parse_scenario
+
 
 def load_benchmark_data(json_file_path):
     """Load and decode the data field from a benchmark result JSON file."""
@@ -51,23 +53,11 @@ def extract_scenarios_and_metrics(df):
 
 def clean_scenario_name(scenario_name):
     """Convert internal scenario names to clean display names."""
-    if "_reduced_searchspace" in scenario_name:
-        fraction = scenario_name.split("_")[0]
-        return f"GP {fraction}% (reduced searchspace)"
-    elif "_full_searchspace" in scenario_name:
-        fraction = scenario_name.split("_")[0]
-        return f"GP {fraction}% (full searchspace)"
-    elif "_index_kernel" in scenario_name:
-        fraction = scenario_name.split("_")[0]
-        return f"GPIndex {fraction}%"
-    elif "_source_prior" in scenario_name:
-        fraction = scenario_name.split("_")[0]
-        return f"SourcePrior {fraction}%"
-    elif "_naive" in scenario_name:
-        fraction = scenario_name.split("_")[0]
-        return f"NaiveGP {fraction}%"
+    source_pct, model_name, is_baseline = parse_scenario(scenario_name)
+    if is_baseline:
+        return model_name  # Use original baseline names like "0", "0_naive"
     else:
-        return scenario_name
+        return f"{model_name} {source_pct}%"  # e.g., "source_prior 10%"
 
 
 def visualize_tl_regression_per_source(json_file_path):
@@ -153,18 +143,10 @@ def visualize_tl_regression_per_source(json_file_path):
     # Dynamically detect TL model types and assign colors
     tl_model_types = set()
     for scenario in tl_scenarios:
-        # Extract model type from scenario name
-        if '_index_kernel' in scenario:
-            tl_model_types.add('index_kernel')
-        elif '_mhgp' in scenario:
-            tl_model_types.add('mhgp')
-        elif '_shgp' in scenario:
-            tl_model_types.add('shgp')
-        elif '_source_prior' in scenario:
-            tl_model_types.add('source_prior')
-        elif '_naive' in scenario:
-            tl_model_types.add('naive')
-        # Add more patterns as new models are introduced
+        # Extract model type using parse_scenario function
+        source_pct, model_name, is_baseline = parse_scenario(scenario)
+        if not is_baseline:
+            tl_model_types.add(model_name)
     
     # Assign colors to detected TL model types
     model_colors = {
@@ -178,17 +160,21 @@ def visualize_tl_regression_per_source(json_file_path):
     
     def get_model_color_and_style(scenario_name):
         """Get consistent color and line style for a scenario."""
-        if 'reduced_searchspace' in scenario_name:
-            return model_colors['reduced_searchspace'], ':'
-        elif 'full_searchspace' in scenario_name:
-            return model_colors['full_searchspace'], '--'
+        source_pct, model_name, is_baseline = parse_scenario(scenario_name)
+        
+        if is_baseline:
+            if model_name == "0_naive":
+                return model_colors['reduced_searchspace'], ':'
+            elif model_name == "0":
+                return model_colors['full_searchspace'], '--'
+            else:
+                return '#cccccc', '-'  # Unknown baseline
         else:
-            # Dynamically detect TL model type from scenario name
-            for model_type in tl_model_types:
-                if f'_{model_type}' in scenario_name:
-                    return model_colors[model_type], '-'
-            # Fallback for unknown model types
-            return '#cccccc', '-'
+            # TL model
+            if model_name in model_colors:
+                return model_colors[model_name], '-'
+            else:
+                return '#cccccc', '-'  # Unknown model type
     
     # Map new column names to old column names for metrics
     metric_column_mapping = {
@@ -318,33 +304,23 @@ def visualize_tl_regression_per_source(json_file_path):
     # Create single legend with all model types
     legend_elements = []
     
-    # Add transfer learning models (solid lines) - dynamically detected
-    model_name_mapping = {
-        'index_kernel': 'GPIndex',
-        'mhgp': 'MHGP', 
-        'shgp': 'SHGP',
-        'source_prior': 'SourcePrior',
-        'naive': 'NaiveGP'
-        # Add more mappings as new models are introduced
-    }
-    
+    # Add transfer learning models (solid lines) - using original model names
     for model_type in sorted(tl_model_types):
         if model_type in model_colors:
             color = model_colors[model_type]
-            clean_name = model_name_mapping.get(model_type, model_type.replace('_', ' ').title())
             legend_elements.append(plt.Line2D([0], [0], color=color, linestyle='-', 
-                                            linewidth=2, label=clean_name))
+                                            linewidth=2, label=model_type))
     
-    # Add baseline models
-    if any('reduced_searchspace' in scenario for scenario in baseline_scenarios):
+    # Add baseline models using simplified names
+    if any(parse_scenario(scenario)[1] == "0_naive" for scenario in baseline_scenarios):
         legend_elements.append(plt.Line2D([0], [0], color=model_colors['reduced_searchspace'], 
                                         linestyle=':', linewidth=2, 
-                                        label='GP 0% (reduced)'))
+                                        label='0_naive'))
     
-    if any('full_searchspace' in scenario for scenario in baseline_scenarios):
+    if any(parse_scenario(scenario)[1] == "0" for scenario in baseline_scenarios):
         legend_elements.append(plt.Line2D([0], [0], color=model_colors['full_searchspace'], 
                                         linestyle='--', linewidth=2, 
-                                        label='GP 0% (full)'))
+                                        label='0'))
     
     # Add the legend to the first subplot (top-left) in lower right corner
     first_ax = axes[0, 0]

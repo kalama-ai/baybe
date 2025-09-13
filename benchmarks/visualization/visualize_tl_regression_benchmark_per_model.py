@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 
+from benchmarks.visualization.scenario_parsing import parse_scenario
+
 
 def load_benchmark_data(json_file_path):
     """Load and decode the data field from a benchmark result JSON file."""
@@ -51,47 +53,17 @@ def extract_scenarios_and_metrics(df):
 
 def clean_scenario_name(scenario_name):
     """Convert internal scenario names to clean display names."""
-    if "_reduced_searchspace" in scenario_name:
-        fraction = scenario_name.split("_")[0]
-        return f"GP {fraction}% (reduced)"
-    elif "_full_searchspace" in scenario_name:
-        fraction = scenario_name.split("_")[0]
-        return f"GP {fraction}% (full)"
-    elif "_index_kernel" in scenario_name:
-        fraction = scenario_name.split("_")[0]
-        return f"GPIndex {fraction}%"
-    elif "_source_prior" in scenario_name:
-        fraction = scenario_name.split("_")[0]
-        return f"SourcePrior {fraction}%"
-    elif "_mhgp" in scenario_name:
-        fraction = scenario_name.split("_")[0]
-        return f"MHGP {fraction}%"
-    elif "_shgp" in scenario_name:
-        fraction = scenario_name.split("_")[0]
-        return f"SHGP {fraction}%"
-    elif "_naive" in scenario_name:
-        fraction = scenario_name.split("_")[0]
-        return f"GP {fraction}% (reduced)"
+    source_pct, model_name, is_baseline = parse_scenario(scenario_name)
+    if is_baseline:
+        return model_name  # Use original baseline names like "0", "0_naive"
     else:
-        return scenario_name
+        return f"{model_name} {source_pct}%"  # e.g., "source_prior 10%"
 
 
 def get_model_type_from_scenario(scenario_name):
     """Extract model type from scenario name for grouping."""
-    if "_searchspace" in scenario_name:
-        return "Baseline_GP"
-    elif "_index_kernel" in scenario_name:
-        return "GPIndex"
-    elif "_source_prior" in scenario_name:
-        return "SourcePrior"
-    elif "_shgp" in scenario_name:
-        return "SHGP"
-    elif "_mhgp" in scenario_name:
-        return "MHGP"
-    elif "_naive" in scenario_name:
-        return "NaiveGP"
-    else:
-        return "Unknown"
+    source_pct, model_name, is_baseline = parse_scenario(scenario_name)
+    return model_name  # Use simplified model names directly
 
 
 def visualize_tl_regression_per_model(json_file_path):
@@ -115,8 +87,12 @@ def visualize_tl_regression_per_model(json_file_path):
         model_groups[model_type].append(scenario)
     
     # Order model types for consistent display
-    model_type_order = ["Baseline_GP", "GPIndex", "NaiveGP", "SourcePrior", "SHGP", "MHGP"]
+    model_type_order = ["0", "0_naive", "index_kernel", "source_prior", "mhgp", "shgp", "naive"]
     ordered_model_types = [mt for mt in model_type_order if mt in model_groups]
+    
+    # Add any unknown models not in the preferred order
+    remaining_models = set(model_groups.keys()) - set(ordered_model_types)
+    ordered_model_types.extend(sorted(remaining_models))
     
     # Get source fractions
     source_fractions = sorted(df["fraction_source"].unique())

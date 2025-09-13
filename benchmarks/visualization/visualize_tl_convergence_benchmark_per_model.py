@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 
+from benchmarks.visualization.scenario_parsing import parse_scenario
+
 
 def load_benchmark_data(json_file_path):
     """Load and decode the data field from a benchmark result JSON file."""
@@ -23,39 +25,6 @@ def load_benchmark_data(json_file_path):
     return df, result
 
 
-def parse_scenario(scenario):
-    """Parse scenario string to extract source percentage and model type.
-    
-    Args:
-        scenario: Scenario string like '10_mhgp', '0_naive', '0', etc.
-        
-    Returns:
-        Tuple of (source_percent, model_name, is_baseline)
-    """
-    if scenario == "0":
-        return 0, "GPIndex_0pct_full", True
-    elif scenario == "0_naive":
-        return 0, "GP_0pct_reduced", True
-    elif "_" in scenario:
-        parts = scenario.split("_", 1)
-        source_percent = int(parts[0])
-        model_name = parts[1]
-        if model_name == "naive":
-            return source_percent, "GP_reduced", False
-        elif model_name == "index_kernel":
-            return source_percent, "GPIndex", False
-        elif model_name == "mhgp":
-            return source_percent, "MHGP", False
-        elif model_name == "shgp":
-            return source_percent, "SHGP", False
-        elif model_name == "source_prior":
-            return source_percent, "SourceGP", False
-        elif model_name == "source_prior_wrapped":
-            return source_percent, "SourceGP_Wrapped", False
-        else:
-            return source_percent, f"TL_{model_name}", False
-    else:
-        return int(scenario), "TL_baseline", False
 
 
 def visualize_tl_convergence_per_model(json_file_path):
@@ -98,8 +67,12 @@ def visualize_tl_convergence_per_model(json_file_path):
             model_data[model_name][source_pct] = scenario
 
     # Define the desired order of models for visualization
-    model_order = ["GPIndex", "MHGP", "SHGP", "SourceGP", "SourceGP_Wrapped", "GP_reduced"]
+    model_order = ["index_kernel", "source_prior", "source_prior_wrapped", "mhgp", "shgp", "naive"]
     available_models = [model for model in model_order if model in model_data]
+    
+    # Add any unknown models not in the preferred order
+    remaining_models = set(model_data.keys()) - set(available_models)
+    available_models.extend(sorted(remaining_models))
     
     print(f"Available models: {available_models}")
     print(f"Baselines: {list(baselines.keys())}")
@@ -155,8 +128,8 @@ def visualize_tl_convergence_per_model(json_file_path):
     
     # Define baseline colors (matches regression scripts)
     baseline_styles = {
-        "GPIndex_0pct_full": {"color": "#7f8c8d", "linestyle": "--", "alpha": 0.8, "linewidth": 2},
-        "GP_0pct_reduced": {"color": "#95a5a6", "linestyle": ":", "alpha": 0.8, "linewidth": 2}
+        "0": {"color": "#7f8c8d", "linestyle": "--", "alpha": 0.8, "linewidth": 2},
+        "0_naive": {"color": "#95a5a6", "linestyle": ":", "alpha": 0.8, "linewidth": 2}
     }
 
     def plot_model_scenarios(ax_cum, ax_iter, scenarios_to_plot, title_text, add_legend=False):
@@ -285,10 +258,7 @@ def visualize_tl_convergence_per_model(json_file_path):
             
             # Use baseline styling
             style = baseline_styles[model_name]
-            if model_name == "GPIndex_0pct_full":
-                label = "GPIndex 0% (full searchspace)"
-            else:
-                label = "GP 0% (reduced searchspace)"
+            label = model_name  # Use original scenario name as label
             
             # Plot CumBest
             ax_cum.plot(
@@ -379,13 +349,8 @@ def visualize_tl_convergence_per_model(json_file_path):
             source_scenarios, "", add_legend=False
         )
         
-        # Set title and customize after plotting
-        if model_name == "GP_reduced":
-            model_title = "GP (reduced searchspace)"
-        elif model_name == "SourceGP_Wrapped":
-            model_title = "SourcePrior (Wrapped)"
-        else:
-            model_title = model_name
+        # Use model name as title
+        model_title = model_name
             
         ax_cum.set_title(model_title, fontsize=11)
         
@@ -401,9 +366,9 @@ def visualize_tl_convergence_per_model(json_file_path):
     
     # Add baseline models
     legend_elements.append(plt.Line2D([0], [0], color="#95a5a6", linestyle=':', 
-                                    linewidth=2, label='0% (reduced)'))
+                                    linewidth=2, label='0_naive'))
     legend_elements.append(plt.Line2D([0], [0], color="#7f8c8d", linestyle='--', 
-                                    linewidth=2, label='0% (full)'))
+                                    linewidth=2, label='0'))
     
     # Add the legend to the first subplot (top-left) in lower right corner
     first_ax = axes[0, 0]
